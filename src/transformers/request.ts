@@ -74,8 +74,49 @@ const MUTATING_TOOL_NAME_PATTERNS = [
   /(^|[_-])rename($|[_-])/i,
 ];
 
+// Tool priority for Codex compatibility
+const TOOL_PRIORITY: Record<string, number> = {
+  // Tier 1: Core execution tools
+  Agent: 1,
+  Bash: 1,
+  Read: 1,
+  Edit: 1,
+  Write: 1,
+  Glob: 1,
+  Grep: 1,
+  WebSearch: 1,
+  WebFetch: 1,
+  // Tier 2: Planning & task management
+  ExitPlanMode: 2,
+  EnterPlanMode: 2,
+  Skill: 2,
+  TaskCreate: 2,
+  TaskUpdate: 2,
+  TaskList: 2,
+  AskUserQuestion: 2,
+  // Tier 3: Supporting tools
+  TaskOutput: 3,
+  TaskStop: 3,
+  TaskGet: 3,
+  EnterWorktree: 3,
+  NotebookEdit: 3,
+  SendMessage: 3,
+};
+
 function isMutatingToolName(name: string): boolean {
   return MUTATING_TOOL_NAME_PATTERNS.some((pattern) => pattern.test(name));
+}
+
+function filterToolsByPriority(tools: CodexTool[], maxCount: number): CodexTool[] {
+  // Sort by priority (lower number = higher priority)
+  const sorted = [...tools].sort((a, b) => {
+    const priorityA = TOOL_PRIORITY[a.name] ?? 999;
+    const priorityB = TOOL_PRIORITY[b.name] ?? 999;
+    if (priorityA !== priorityB) return priorityA - priorityB;
+    return tools.indexOf(a) - tools.indexOf(b); // maintain original order for same priority
+  });
+
+  return sorted.slice(0, maxCount);
 }
 
 function shouldDisableParallelToolCalls(anthropic: AnthropicRequest): boolean {
@@ -149,8 +190,11 @@ function mapAnthropicToolToCodexTool(tool: AnthropicTool): CodexTool {
   };
 }
 
-function mapToolChoice(choice: AnthropicToolChoice | undefined): CodexToolChoice | undefined {
-  if (!choice) return undefined;
+function mapToolChoice(choice: AnthropicToolChoice | undefined, hasTools: boolean): CodexToolChoice | undefined {
+  if (!choice) {
+    // If no tool_choice is specified but we have tools, default to "auto"
+    return hasTools ? "auto" : undefined;
+  }
   if (choice.type === "auto") return "auto";
   if (choice.type === "none") return "none";
   if (choice.type === "any") return "required";
@@ -253,13 +297,26 @@ export function transformAnthropicToCodex(anthropic: AnthropicRequest): CodexReq
 
   const systemInstruction = extractSystemPrompt(anthropic.system);
 
+  // Filter messages if too many (Codex compatibility)
+  let messages = anthropic.messages ?? [];
+  if (messages.length > 50) {
+    messages = messages.slice(-20); // Keep only last 20 messages
+  }
+
   const input: CodexInputItem[] = [];
-  for (const msg of anthropic.messages ?? []) {
+  for (const msg of messages) {
     input.push(...contentToInputItems(msg.role, msg.content));
   }
 
-  const tools = anthropic.tools?.map(mapAnthropicToolToCodexTool);
-  const toolChoice = mapToolChoice(anthropic.tool_choice);
+  let tools = anthropic.tools?.map(mapAnthropicToolToCodexTool);
+
+  // Codex compatibility: filter tools by priority if too many
+  if (tools && tools.length > 50) {
+    tools = filterToolsByPriority(tools, 30);
+  }
+
+  const hasTools = !!(tools && tools.length > 0);
+  const toolChoice = mapToolChoice(anthropic.tool_choice, hasTools);
 
   const disableParallelToolCalls = shouldDisableParallelToolCalls(anthropic);
   const parallelToolCalls = disableParallelToolCalls ? undefined : anthropic.parallel_tool_calls;
@@ -272,7 +329,7 @@ export function transformAnthropicToCodex(anthropic: AnthropicRequest): CodexReq
     store: false,
     reasoning: { effort, summary: "auto" },
     text: { verbosity: "medium" },
-    tools: tools && tools.length > 0 ? tools : undefined,
+    tools: hasTools ? tools : undefined,
     tool_choice: toolChoice,
     parallel_tool_calls: parallelToolCalls,
   };

@@ -55,7 +55,7 @@ router.post(
       console.log(
         `[chatgpt-codex-proxy] tool_plan inbound_parallel=${String(inboundParallel)} effective_parallel=${String(
           codexRequest.parallel_tool_calls,
-        )} tool_count=${inboundToolCount} tool_choice=${inboundToolChoice} tool_names=[${inboundToolNames}]`,
+        )} tool_count=${inboundToolCount} inbound_tool_choice=${inboundToolChoice} codex_tool_choice=${String(codexRequest.tool_choice)} tool_names=[${inboundToolNames}]`,
       );
 
       const codexResponse = await codexClient.createResponse(codexRequest);
@@ -194,6 +194,10 @@ router.post(
       }
 
       if (error instanceof Error) {
+        // Handle tool limit errors as 400 Bad Request
+        if (error.message.startsWith("Too many tools")) {
+          return next(new ProxyError(error.message, 400, "invalid_request_error"));
+        }
         return next(
           new ProxyError(
             `Unhandled proxy error: ${error.message}`,
