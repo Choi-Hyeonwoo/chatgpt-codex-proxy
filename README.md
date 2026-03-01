@@ -236,17 +236,71 @@ chatgpt-codex-proxy/
 | `ANTHROPIC_DEFAULT_OPUS_MODEL` | - | Opus → Codex 모델 매핑 |
 | `PASSTHROUGH_MODE` | `true` | 기본 passthrough, `false/0/no/off`면 매핑 모드 |
 
-## 보안
+## 🔒 보안
+
+### ✅ 개인 로컬 사용 (권장)
+
+이 프로젝트는 **개인의 로컬 머신에서만 사용하도록 설계**되었습니다.
+
+```bash
+# ✅ 안전한 사용법
+npm run dev  # localhost:19080에서만 실행
+export ANTHROPIC_BASE_URL=http://127.0.0.1:19080
+claude  # 같은 머신의 Claude Code에서만 접근
+```
+
+### ⚠️ 프로덕션 배포 시 필수 조치
+
+**GitHub에서 clone/fork하여 프로덕션 환경(서버, 클라우드, 네트워크)에 배포하려면 다음을 반드시 구현하세요:**
+
+#### 1. 🔐 인증 추가 (필수)
+```bash
+# API 키 인증 구현 필요
+export PROXY_API_KEY="your-secret-key-here"
+# 요청 시 헤더에 추가: X-Proxy-API-Key: your-secret-key-here
+```
+
+#### 2. 🛡️ CORS 제한 (필수)
+```bash
+# 신뢰할 수 있는 도메인만 허용
+export ALLOWED_ORIGINS="https://your-domain.com,http://localhost:3000"
+```
+
+#### 3. ⏱️ 레이트 제한 추가 (필수)
+```bash
+# 무제한 API 호출 방지
+# express-rate-limit 라이브러리 필요
+# 예: 분당 10개 요청으로 제한
+```
+
+#### 4. 📁 파일 권한 설정 (필수)
+```bash
+# 토큰 파일 권한 0600 (소유자만 읽기/쓰기)
+chmod 600 ~/.chatgpt-codex-proxy/tokens.json
+```
+
+#### 5. 📊 모니터링 추가 (권장)
+```bash
+# 비정상적인 사용 패턴 모니터링
+# 로깅 활성화
+# 비용 추적
+```
+
+### 보안 정보
 
 - 토큰은 `~/.chatgpt-codex-proxy/tokens.json`에 저장됩니다
 - 토큰은 자동으로 갱신됩니다 (5분 버퍼)
 - ChatGPT Plus/Pro 구독이 필요합니다
 
+---
+
 ## 주의사항
 
-- 이 프로젝트는 개인용으로 설계되었습니다
+- ✅ **개인용으로 설계됨** - 개인 로컬 머신에서만 사용하세요
+- ❌ **프로덕션 배포 시 주의** - 위의 "프로덕션 배포 시 필수 조치" 참조
 - ChatGPT 서비스 약관을 준수하세요
 - 과도한 사용은 계정 제한을 받을 수 있습니다
+- **공개 네트워크(0.0.0.0)에 바인드하지 마세요** - 127.0.0.1:19080만 사용
 
 ## 라이선스
 
