@@ -1,0 +1,45 @@
+{
+  "manifest_version": "0.3",
+  "name": "chatgpt-codex-proxy-tools",
+  "display_name": "ChatGPT Codex Proxy Tools",
+  "version": "0.1.0",
+  "description": "Adds tools that call a local chatgpt-codex-proxy (/v1/messages).",
+  "author": {
+    "name": "kwak"
+  },
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/index.js"],
+      "env": {
+        "CODEX_PROXY_BASE_URL": "${user_config.codex_proxy_base_url}",
+        "CODEX_PROXY_MODEL": "${user_config.codex_proxy_model}"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "codex_chat",
+      "description": "Send a prompt to chatgpt-codex-proxy (Anthropic /v1/messages) and return the text."
+    }
+  ],
+  "user_config": {
+    "codex_proxy_base_url": {
+      "type": "string",
+      "title": "Codex Proxy Base URL",
+      "description": "Base URL of your running chatgpt-codex-proxy instance.",
+      "default": "http://127.0.0.1:19080",
+      "required": false
+    },
+    "codex_proxy_model": {
+      "type": "string",
+      "title": "Model",
+      "description": "Model string passed to /v1/messages. Leave default unless you know what you're doing.",
+      "default": "gpt-5.2-codex",
+      "required": false
+    }
+  },
+  "privacy_policies": []
+}

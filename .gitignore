@@ -6,6 +6,7 @@ dist/
 
 # Local build artifacts / bundles
 *.mcpb
+!dxt.mcpb
 
 # Local caches
 __pycache__/
@@ -13,3 +14,16 @@ __pycache__/
 
 # Claude Code local metadata
 .claude/
+
+# Claude Desktop DXT dev deps
+/dxt/node_modules/
+/dxt/.cache/
+/dxt/.npm/
+/dxt/.pnpm-store/
+/dxt/.yarn/
+/dxt/.yarn-cache/
+/dxt/.yarnrc.yml
+/dxt/yarn.lock
+/dxt/package-lock.json
+/dxt/pnpm-lock.yaml
+/dxt/bun.lockb
