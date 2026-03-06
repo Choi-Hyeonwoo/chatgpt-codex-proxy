@@ -1,3 +1,22 @@
+/**
+ * [파일 목적]
+ * 이 파일은 Anthropic Messages API와 호환되는 요청/응답 타입을 정의한다.
+ * 프록시의 라우트, 요청 변환기, 응답 변환기가 공통으로 참조하는 계약 계층이다.
+ *
+ * [주요 흐름]
+ * 1. 텍스트/이미지/tool_use/tool_result content block 타입을 정의한다.
+ * 2. 요청 본문(AnthropicRequest)과 응답 본문(AnthropicResponse) 구조를 고정한다.
+ * 3. tool_choice, usage 등 주변 프로토콜 타입을 공유한다.
+ *
+ * [외부 연결]
+ * - routes/messages.ts: HTTP 요청/응답 타입 사용
+ * - transformers/request.ts: Anthropic → Codex 변환 입력 타입
+ * - transformers/response.ts: Codex → Anthropic 변환 출력 타입
+ *
+ * [수정시 주의]
+ * - 필드명이나 union 타입을 바꾸면 변환기와 라우트가 함께 깨질 수 있다.
+ * - tool_use/tool_result 구조 변경은 도구 호출 연쇄의 호환성에 직접 영향이 있다.
+ */
 export type MessageRole = "user" | "assistant" | "system";
 
 export interface TextContentBlock {

@@ -1,3 +1,21 @@
+/**
+ * [파일 목적]
+ * 이 파일은 프록시 전역에서 사용하는 에러 타입과 Express 에러 처리기를 제공한다.
+ * 내부 예외를 Anthropic 호환 에러 응답 형식으로 정규화하는 책임을 가진다.
+ *
+ * [주요 흐름]
+ * 1. ProxyError로 상태 코드/에러 타입/세부 정보를 함께 보관한다.
+ * 2. notFoundHandler가 미등록 경로를 404 형식으로 변환한다.
+ * 3. errorHandler가 body parser 오류와 일반 예외를 공통 응답으로 변환한다.
+ *
+ * [외부 연결]
+ * - server.ts: 전역 에러 핸들러 체인 등록
+ * - routes/messages.ts: 비즈니스 예외를 ProxyError로 전달
+ *
+ * [수정시 주의]
+ * - error body 구조를 바꾸면 Anthropic 클라이언트 호환성이 깨질 수 있다.
+ * - 상태 코드 매핑을 바꾸면 클라이언트 재시도/에러 처리 동작이 달라진다.
+ */
 import type { NextFunction, Request, Response } from "express";
 
 export class ProxyError extends Error {

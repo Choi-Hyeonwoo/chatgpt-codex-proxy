@@ -14,6 +14,7 @@ __pycache__/
 
 # Claude Code local metadata
 .claude/
+CLAUDE.md
 
 # Claude Desktop DXT dev deps
 /dxt/node_modules/

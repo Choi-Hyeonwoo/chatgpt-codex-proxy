@@ -1,3 +1,20 @@
+/**
+ * [파일 목적]
+ * 이 파일은 chatgpt-codex-proxy HTTP 서버의 런타임 진입점이다.
+ * 환경변수를 로드하고 Express 앱을 실제 포트에 바인딩한다.
+ *
+ * [주요 흐름]
+ * 1. dotenv로 .env 값을 로드한다.
+ * 2. PORT 환경변수 또는 기본 포트를 결정한다.
+ * 3. server.ts에서 만든 Express 앱을 listen 상태로 올린다.
+ *
+ * [외부 연결]
+ * - ./server.ts: 실제 Express app 구성
+ * - dotenv: 로컬 환경변수 로드
+ *
+ * [수정시 주의]
+ * - 부팅 순서나 포트 결정 로직을 바꾸면 실행 방식과 배포 설정이 영향을 받는다.
+ */
 import dotenv from "dotenv";
 import app from "./server.js";
 

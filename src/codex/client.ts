@@ -1,4 +1,24 @@
-// src/codex/client.ts
+/**
+ * [파일 목적]
+ * 이 파일은 Codex Responses API와 직접 통신하는 클라이언트 계층이다.
+ * 인증 토큰을 읽어 요청을 보내고, SSE 응답을 최종 CodexResponse 형태로 복원한다.
+ *
+ * [주요 흐름]
+ * 1. getValidTokens로 access token과 account id를 확보한다.
+ * 2. Anthropic 변환 결과(CodexRequest)를 Codex backend 형식으로 전송한다.
+ * 3. 에러 응답은 상태 코드별로 CodexApiError로 정규화한다.
+ * 4. SSE 스트림에서 delta/final event를 읽어 최종 응답 객체를 만든다.
+ *
+ * [외부 연결]
+ * - ../auth.ts: 저장 토큰 조회/자동 갱신
+ * - ../transformers/request.ts: CodexRequest 타입
+ * - chatgpt.com/backend-api/codex/responses: 실제 호출 대상
+ *
+ * [수정시 주의]
+ * - 헤더 이름(chatgpt-account-id, Authorization 등)을 바꾸면 인증이 실패할 수 있다.
+ * - SSE 파싱 규칙을 바꾸면 정상 응답도 빈 응답이나 파싱 실패로 처리될 수 있다.
+ * - 에러 매핑을 바꾸면 상위 라우트의 Anthropic 호환 에러 변환 결과가 달라진다.
+ */
 import { randomUUID } from "node:crypto";
 import type { CodexRequest } from "../transformers/request.js";
 import { getValidTokens } from "../auth.js";

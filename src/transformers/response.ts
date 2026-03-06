@@ -1,4 +1,20 @@
-// src/transformers/response.ts
+/*
+[파일 목적]
+Codex Responses API 응답(CodexResponse)을 Anthropic Messages API 응답(AnthropicResponse)으로 변환한다.
+
+[주요 흐름]
+1. Codex output을 순회하며 텍스트 및 function_call/tool_use를 Anthropic content block으로 변환
+2. tool_use 유무에 따라 stop_reason(end_turn/tool_use) 결정
+3. usage 토큰 정보를 Anthropic 응답 구조로 매핑
+
+[외부 연결]
+- codex/client(CodexResponse 타입)
+- types/anthropic(AnthropicResponse/ContentBlock)
+
+[수정시 주의]
+- tool_use block의 id/name/input 규칙을 바꾸면 클라이언트의 tool_result 매칭이 깨질 수 있음
+- stop_reason 결정 로직 변경은 스트리밍/툴 연쇄 호출 흐름에 영향
+*/
 import type { AnthropicResponse, ContentBlock, ToolUseContentBlock } from "../types/anthropic.js";
 import type { CodexResponse } from "../codex/client.js";
 

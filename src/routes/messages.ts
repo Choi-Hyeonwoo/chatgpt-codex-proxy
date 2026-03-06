@@ -1,3 +1,23 @@
+/*
+[파일 목적]
+Anthropic Messages API 형태의 요청을 받아 Codex Responses API로 프록시하고,
+응답을 다시 Anthropic 형태로 변환해 반환한다.
+
+[주요 흐름]
+1. /health: 서비스 상태 및 환경 기반 설정 노출(진단 목적)
+2. /v1/messages: 요청 유효성 최소 검증 → Anthropic→Codex 변환 → Codex 호출 → Codex→Anthropic 변환
+3. stream=true인 경우 Anthropic SSE 이벤트(message_start/content_block_start|content_block_delta|content_block_stop/message_delta/message_stop)로 전송
+
+[외부 연결]
+- CodexClient(createResponse): 실제 Codex API 호출
+- transformAnthropicToCodex / transformCodexToAnthropic: 프로토콜 변환
+- ProxyError: Anthropic 호환 에러 포맷
+
+[수정시 주의]
+- SSE 이벤트 포맷/순서를 바꾸면 Anthropic SDK/클라이언트가 스트리밍을 해석하지 못할 수 있음
+- 요청 검증/에러 매핑을 바꾸면 클라이언트에서 에러 타입이 달라질 수 있음
+- 로그 필드명을 바꾸면 운영/디버깅 대시보드 쿼리가 깨질 수 있음
+*/
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { CodexApiError, CodexClient } from "../codex/client.js";
 import { transformAnthropicToCodex } from "../transformers/request.js";

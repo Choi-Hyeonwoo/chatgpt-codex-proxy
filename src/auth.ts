@@ -1,6 +1,24 @@
 /**
- * OAuth 2.0 Authentication for OpenAI Codex
- * Adapted from chatgpt-codex-mcp for proxy server
+ * [파일 목적]
+ * 이 파일은 chatgpt-codex-proxy에서 사용하는 OAuth 인증과 토큰 저장 관리를 담당한다.
+ * 로그인 시작, 콜백 처리, 토큰 교환/갱신, 로컬 저장소 읽기/삭제를 한곳에서 처리한다.
+ *
+ * [주요 흐름]
+ * 1. PKCE와 state 값을 생성해 OAuth 인증 URL을 만든다.
+ * 2. 로컬 콜백 서버를 열고 브라우저 로그인 결과를 받는다.
+ * 3. authorization code를 access/refresh token으로 교환한다.
+ * 4. access token에서 account id를 추출해 로컬 파일에 저장한다.
+ * 5. 이후 호출에서는 만료 시 refresh token으로 자동 갱신한다.
+ *
+ * [외부 연결]
+ * - OpenAI OAuth endpoint: authorize/token
+ * - node:http: 로컬 콜백 서버
+ * - 파일 시스템: ~/.chatgpt-codex-proxy/tokens.json
+ *
+ * [수정시 주의]
+ * - redirect URI, client_id, scope를 바꾸면 실제 OAuth 로그인 자체가 깨질 수 있다.
+ * - 토큰 파일 구조를 바꾸면 load/save/refresh 전체 흐름을 같이 맞춰야 한다.
+ * - account id 추출 규칙이 바뀌면 codex API 호출 헤더도 같이 점검해야 한다.
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
