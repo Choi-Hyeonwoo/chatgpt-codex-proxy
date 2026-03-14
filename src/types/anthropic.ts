@@ -60,6 +60,11 @@ export interface AnthropicMessage {
   content: string | ContentBlock[];
 }
 
+export interface AnthropicThinking {
+  type: "enabled" | "disabled";
+  budget_tokens?: number;
+}
+
 export interface AnthropicRequest {
   model: string;
   max_tokens: number;
@@ -74,6 +79,7 @@ export interface AnthropicRequest {
   tools?: AnthropicTool[];
   tool_choice?: AnthropicToolChoice;
   parallel_tool_calls?: boolean;
+  thinking?: AnthropicThinking;
 }
 
 export interface AnthropicTool {

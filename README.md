@@ -26,6 +26,7 @@ Claude Code                    chatgpt-codex-proxy              ChatGPT Codex AP
 - Automatic request/response transformation (Anthropic ↔ Codex)
 - SSE streaming support (`stream=true`)
 - Claude → Codex model mapping (with env overrides)
+- **MCP tool injection** — proxy reads `~/.claude.json`, connects to your MCP servers at startup, and injects their tool schemas into every Codex request
 
 ## Installation
 
@@ -47,7 +48,20 @@ npm run login
 
 This opens a browser window for OAuth login. You need an active ChatGPT Plus/Pro subscription.
 
-### 2) Run the server
+### 2) Configure `.env`
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` to set your preferences:
+
+```env
+# Enable MCP tool injection (comma-separated server names from ~/.claude.json, or "all")
+PROXY_MCP_SERVERS=stitch,linear
+```
+
+### 3) Run the server
 
 ```bash
 # Development mode
@@ -57,7 +71,7 @@ npm run dev
 npm run start
 ```
 
-### 3) Configure Claude Code
+### 4) Configure Claude Code
 
 ```bash
 export ANTHROPIC_BASE_URL=http://127.0.0.1:19080
@@ -79,6 +93,52 @@ claude
 | `npm run dev` | Start dev server (hot reload) |
 | `npm run start` | Start production server |
 
+## MCP tool injection
+
+Claude Code's MCP tools are normally only visible to the Claude backend. This proxy bridges that gap: it reads your `~/.claude.json` at startup, connects to the configured MCP servers, fetches their tool schemas, and injects them into every Codex request. The GPT model can then call those tools just like Claude would.
+
+```
+Claude Code                 chatgpt-codex-proxy                  ChatGPT Codex API
+   │                               │                                    │
+   │  tools: [Edit, Bash, ...]     │  tools: [Edit, Bash, ...           │
+   │  (deferred: stitch, qmd, ...) │          + mcp__stitch__*          │
+   │                               │          + mcp__qmd__*  ]          │
+   │ ─────────────────────────────>│ ──────────────────────────────────>│
+```
+
+### Configuration
+
+Set `PROXY_MCP_SERVERS` in your `.env` file:
+
+```env
+# Specific servers only (names must match keys in ~/.claude.json)
+PROXY_MCP_SERVERS=stitch,linear
+
+# All servers registered in ~/.claude.json
+PROXY_MCP_SERVERS=all
+
+# Disabled (default)
+PROXY_MCP_SERVERS=
+```
+
+At startup you'll see:
+```
+[mcp-registry] connecting to: stitch, linear
+[mcp-registry] stitch: 8 tools loaded
+[mcp-registry] linear: 6 tools loaded
+[mcp-registry] ready: 14 total MCP tools
+```
+
+### How it works
+
+1. On startup the proxy reads `~/.claude.json` → `mcpServers`
+2. For each enabled server it runs the MCP handshake (`initialize` → `tools/list`) — HTTP or stdio, whichever the server uses
+3. Schemas are cached in memory for the lifetime of the proxy process
+4. On every `/v1/messages` request the cached tools are appended to the Codex `tools` array (tool names follow the Claude Code convention: `mcp__serverName__toolName`)
+5. When GPT calls a tool, Claude Code intercepts the `tool_use` response, executes the real MCP call, and sends the result back through the proxy
+
+Both HTTP (`type: http`) and stdio (`command`) MCP servers are supported. Per-server timeout is 20 seconds.
+
 ## Model mapping
 
 ### Default mapping
@@ -90,6 +150,29 @@ claude
 | `claude-3-haiku-20240307` | `gpt-5.3-codex-spark` |
 | `claude-3-opus-20240229` | `gpt-5.3-codex-xhigh` |
 | (fallback) | `gpt-5.2-codex` |
+
+### Available Codex models
+
+| Model | Effort | Notes |
+|---|---|---|
+| `gpt-5.4` | high | **Current flagship** (2026, replaces gpt-5.2-codex as default) |
+| `gpt-5` | high | Base GPT-5 with separate effort setting |
+| `gpt-5-codex` | high | GPT-5 optimized for agentic coding (official Responses API) |
+| `gpt-5-codex-mini` | medium | Lightweight GPT-5-Codex variant |
+| `gpt-5.3-codex` | high | |
+| `gpt-5.3-codex-xhigh` | xhigh | |
+| `gpt-5.3-codex-medium` | medium | |
+| `gpt-5.3-codex-low` | low | |
+| `gpt-5.3-codex-spark` | low | Speed-optimized, >1000 tok/s |
+| `gpt-5.2-codex` | high | Proxy default |
+| `gpt-5.2-codex-xhigh` | xhigh | |
+| `gpt-5.2-codex-medium` | medium | |
+| `gpt-5.2-codex-low` | low | |
+| `gpt-5.1-codex` | high | |
+| `gpt-5.1-codex-max` | xhigh | |
+| `gpt-5.1-codex-mini` | medium | |
+
+Shorthand aliases: `gpt-5.4` → `gpt-5.4`, `gpt-5.3` → `gpt-5.3-codex`, `gpt-5.2` → `gpt-5.2-codex`, `gpt-5.1` → `gpt-5.1-codex`
 
 ### Environment overrides
 
@@ -103,6 +186,31 @@ You can override the Codex model used for each Claude family:
 | `PASSTHROUGH_MODE` | If `true/1/yes/on`, pass the requested model name directly to Codex |
 
 Priority: if `PASSTHROUGH_MODE=true` → passthrough; otherwise env overrides → default mapping.
+
+### Effort control
+
+Claude Code's model selector UI has an effort slider (`Low ← → High`), but **this slider is not included in API requests when using GPT models** — it only affects native Claude models.
+
+To control reasoning effort for Codex, use one of these two methods instead:
+
+**Method 1 — Encode effort in the model name** (recommended for per-model control)
+
+```bash
+# .zshrc
+export ANTHROPIC_DEFAULT_SONNET_MODEL="gpt-5.3-codex-xhigh"   # xhigh
+export ANTHROPIC_DEFAULT_HAIKU_MODEL="gpt-5.3-codex-spark"     # low
+export ANTHROPIC_DEFAULT_OPUS_MODEL="gpt-5.2-codex"            # high (default)
+```
+
+The proxy automatically reads the effort from the model name suffix: `-xhigh` / `-high` / `-medium` / `-low` / `-spark`.
+
+**Method 2 — Global override via `.env`**
+
+```env
+PROXY_DEFAULT_EFFORT=high
+```
+
+Priority order (highest → lowest): `thinking.budget_tokens` in request → model name suffix/table → `PROXY_DEFAULT_EFFORT` → `medium`
 
 ### Optional shell helper
 
@@ -184,10 +292,15 @@ chatgpt-codex-proxy/
 │   ├── codex/
 │   │   ├── client.ts      # Codex API client
 │   │   └── models.ts      # Model mapping
+│   ├── mcp/
+│   │   ├── config.ts      # Read ~/.claude.json MCP server configs
+│   │   ├── client.ts      # HTTP + stdio MCP clients (tools/list)
+│   │   └── registry.ts    # Tool schema cache (singleton)
 │   ├── types/
 │   │   └── anthropic.ts   # Types
 │   └── utils/
 │       └── errors.ts      # Error handling
+├── .env.example           # Environment variable reference
 ├── package.json
 ├── tsconfig.json
 └── README.md
@@ -204,6 +317,8 @@ chatgpt-codex-proxy/
 | `ANTHROPIC_DEFAULT_SONNET_MODEL` | - | Sonnet → Codex model override |
 | `ANTHROPIC_DEFAULT_OPUS_MODEL` | - | Opus → Codex model override |
 | `PASSTHROUGH_MODE` | `true` | Default passthrough; set `false/0/no/off` to use mapping |
+| `PROXY_DEFAULT_EFFORT` | _(auto)_ | Reasoning effort override: `low`, `medium`, `high`, or `xhigh`. If unset: model table → name suffix → `medium` |
+| `PROXY_MCP_SERVERS` | _(disabled)_ | MCP servers to inject: `all` or comma-separated names from `~/.claude.json` |
 
 ## Security
 

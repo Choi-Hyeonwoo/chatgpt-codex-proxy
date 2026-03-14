@@ -39,18 +39,27 @@ const HARDCODED_MAPPING: Record<string, string> = {
     "gpt-5.1": "gpt-5.1-codex",
     "gpt-5.2": "gpt-5.2-codex",
     "gpt-5.3": "gpt-5.3-codex",
+    "gpt-5.4": "gpt-5.4",
 };
 
 const SUPPORTED_CODEX_MODELS = new Set<string>([
+    // gpt-5.4 / gpt-5 계열 (2025~2026 최신, Responses API)
+    "gpt-5.4",
+    "gpt-5",
+    "gpt-5-codex",
+    "gpt-5-codex-mini",
+    // gpt-5.3 계열
     "gpt-5.3-codex",
     "gpt-5.3-codex-spark",
     "gpt-5.3-codex-medium",
     "gpt-5.3-codex-low",
     "gpt-5.3-codex-xhigh",
+    // gpt-5.2 계열
     "gpt-5.2-codex",
     "gpt-5.2-codex-medium",
     "gpt-5.2-codex-low",
     "gpt-5.2-codex-xhigh",
+    // gpt-5.1 계열
     "gpt-5.1-codex",
     "gpt-5.1-codex-max",
     "gpt-5.1-codex-mini",
@@ -115,20 +124,88 @@ export function mapAnthropicModelToCodex(anthropicModel: string): string {
 }
 
 export const CODEX_MODEL_EFFORT: Record<string, string> = {
+    // gpt-5.4 / gpt-5 계열 (최신)
+    "gpt-5.4": "high",
+    "gpt-5": "high",
+    "gpt-5-codex": "high",
+    "gpt-5-codex-mini": "medium",
+    // gpt-5.3 계열
     "gpt-5.3-codex": "high",
     "gpt-5.3-codex-spark": "low",
     "gpt-5.3-codex-medium": "medium",
     "gpt-5.3-codex-low": "low",
     "gpt-5.3-codex-xhigh": "xhigh",
+    // gpt-5.2 계열
     "gpt-5.2-codex": "high",
     "gpt-5.2-codex-medium": "medium",
     "gpt-5.2-codex-low": "low",
     "gpt-5.2-codex-xhigh": "xhigh",
+    // gpt-5.1 계열
     "gpt-5.1-codex": "high",
     "gpt-5.1-codex-max": "xhigh",
     "gpt-5.1-codex-mini": "medium",
 };
 
-export function getEffortForModel(codexModel: string): string {
-    return CODEX_MODEL_EFFORT[codexModel] ?? "medium";
+/*
+[목적]
+Claude Code의 thinking.budget_tokens 값을 Codex reasoning effort 수준으로 변환한다.
+
+[입력]
+- budgetTokens: Claude API thinking.budget_tokens 값
+
+[출력]
+- effort 문자열: "low" | "medium" | "high" | "xhigh"
+*/
+function budgetTokensToEffort(budgetTokens: number): string {
+    if (budgetTokens >= 20_000) return "xhigh";
+    if (budgetTokens >= 8_000) return "high";
+    if (budgetTokens >= 2_000) return "medium";
+    return "low";
+}
+
+/*
+[목적]
+최종 Codex 모델명과 선택적 thinking 설정으로 reasoning effort 값을 결정한다.
+
+[입력]
+- codexModel: mapAnthropicModelToCodex가 반환한 최종 모델명
+- budgetTokens: Claude API thinking.budget_tokens (있을 경우)
+
+[출력]
+- effort 문자열: "low" | "medium" | "high" | "xhigh"
+
+[우선순위]
+1. thinking.budget_tokens (Claude Code thinking 설정 → passthrough)
+2. CODEX_MODEL_EFFORT 테이블 (등록된 모델의 고정 매핑)
+3. 모델명 suffix 파싱 (-xhigh / -high / -medium / -spark / -low)
+4. PROXY_DEFAULT_EFFORT 환경변수 (전역 폴백)
+5. 기본값 "medium"
+
+[수정시 영향]
+- effort가 바뀌면 Codex 추론 깊이/속도/비용이 달라진다
+*/
+export function getEffortForModel(codexModel: string, budgetTokens?: number): string {
+    // 1. Claude Code thinking 설정 → passthrough
+    if (budgetTokens !== undefined && budgetTokens > 0) {
+        return budgetTokensToEffort(budgetTokens);
+    }
+
+    // 2. 등록된 모델 테이블
+    const tableEffort = CODEX_MODEL_EFFORT[codexModel];
+    if (tableEffort) return tableEffort;
+
+    // 3. 모델명 suffix에서 effort 추출 (passthrough 모드 커스텀 모델 대응)
+    const m = codexModel.toLowerCase();
+    if (m.includes("-xhigh")) return "xhigh";
+    if (m.includes("-high")) return "high";
+    if (m.includes("-medium")) return "medium";
+    if (m.includes("-spark") || m.includes("-low")) return "low";
+
+    // 4. 환경변수 전역 폴백
+    const envEffort = process.env.PROXY_DEFAULT_EFFORT?.trim().toLowerCase();
+    if (envEffort && ["low", "medium", "high", "xhigh"].includes(envEffort)) {
+        return envEffort;
+    }
+
+    return "medium";
 }

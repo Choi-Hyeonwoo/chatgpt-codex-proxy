@@ -431,7 +431,10 @@ Codex 호환성 제한(메시지/도구 수, 병렬 툴 호출)을 적용한다.
 */
 export function transformAnthropicToCodex(anthropic: AnthropicRequest): CodexRequest {
   const codexModel = mapAnthropicModelToCodex(anthropic.model);
-  const effort = getEffortForModel(codexModel);
+  // thinking.budget_tokens가 있으면 passthrough, 없으면 모델명/env 기반으로 결정
+  const budgetTokens =
+    anthropic.thinking?.type === "enabled" ? anthropic.thinking.budget_tokens : undefined;
+  const effort = getEffortForModel(codexModel, budgetTokens);
 
   const systemInstruction = extractSystemPrompt(anthropic.system);
 

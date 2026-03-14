@@ -26,6 +26,7 @@ Claude Code                    chatgpt-codex-proxy              ChatGPT API
 - ✅ 요청/응답 자동 변환
 - ✅ SSE 스트리밍 지원
 - ✅ Claude → GPT 모델 자동 매핑
+- ✅ **MCP 툴 주입** — 시작 시 `~/.claude.json`을 읽어 MCP 서버에 연결하고, 스키마를 Codex 요청에 자동 주입
 
 ## 설치
 
@@ -51,7 +52,20 @@ npm run login
 
 브라우저가 열리고 ChatGPT 계정으로 로그인합니다. ChatGPT Plus 또는 Pro 구독이 필요합니다.
 
-### 2. 서버 실행
+### 2. `.env` 설정
+
+```bash
+cp .env.example .env
+```
+
+`.env` 파일을 편집해 원하는 값을 설정합니다:
+
+```env
+# MCP 툴 주입: ~/.claude.json에 등록된 서버 이름(쉼표 구분) 또는 all
+PROXY_MCP_SERVERS=stitch,linear
+```
+
+### 3. 서버 실행
 
 ```bash
 # 개발 모드
@@ -61,7 +75,7 @@ npm run dev
 npm run start
 ```
 
-### 3. Claude Code 설정
+### 4. Claude Code 설정
 
 ```bash
 # 환경변수 설정
@@ -83,6 +97,52 @@ claude
 | `npm run dev` | 개발 서버 실행 (hot reload) |
 | `npm run start` | 프로덕션 서버 실행 |
 
+## MCP 툴 주입
+
+Claude Code의 MCP 툴은 원래 Claude 백엔드에서만 사용할 수 있습니다. 이 프록시는 그 간극을 메웁니다. 시작 시 `~/.claude.json`을 읽어 MCP 서버에 연결하고, 툴 스키마를 수집해 모든 Codex 요청에 주입합니다. 그러면 GPT 모델도 MCP 툴을 호출할 수 있습니다.
+
+```
+Claude Code                 chatgpt-codex-proxy                  ChatGPT Codex API
+   │                               │                                    │
+   │  tools: [Edit, Bash, ...]     │  tools: [Edit, Bash, ...           │
+   │  (deferred: stitch, qmd, ...) │          + mcp__stitch__*          │
+   │                               │          + mcp__qmd__*  ]          │
+   │ ─────────────────────────────>│ ──────────────────────────────────>│
+```
+
+### 설정 방법
+
+`.env` 파일에서 `PROXY_MCP_SERVERS`를 설정합니다:
+
+```env
+# 특정 서버만 활성화 (이름은 ~/.claude.json의 키와 일치해야 함)
+PROXY_MCP_SERVERS=stitch,linear
+
+# ~/.claude.json에 등록된 모든 서버
+PROXY_MCP_SERVERS=all
+
+# 비활성화 (기본값)
+PROXY_MCP_SERVERS=
+```
+
+서버 시작 시 다음과 같은 로그가 출력됩니다:
+```
+[mcp-registry] connecting to: stitch, linear
+[mcp-registry] stitch: 8 tools loaded
+[mcp-registry] linear: 6 tools loaded
+[mcp-registry] ready: 14 total MCP tools
+```
+
+### 동작 방식
+
+1. 시작 시 `~/.claude.json` → `mcpServers` 읽기
+2. 활성 서버마다 MCP 핸드셰이크(`initialize` → `tools/list`) 실행 — HTTP와 stdio 모두 지원
+3. 스키마를 프로세스 생명주기 동안 메모리에 캐싱
+4. 매 `/v1/messages` 요청마다 캐시된 툴을 Codex `tools` 배열에 추가 (툴 이름: `mcp__서버명__툴명`)
+5. GPT가 툴을 호출하면 Claude Code가 `tool_use` 응답을 받아 실제 MCP 호출을 수행하고, 결과를 프록시를 통해 되돌려 줌
+
+HTTP(`type: http`)와 stdio(`command`) 방식 MCP 서버 모두 지원. 서버당 타임아웃은 20초.
+
 ## 모델 매핑
 
 ### 기본 매핑
@@ -94,6 +154,29 @@ claude
 | `claude-3-haiku-20240307` | `gpt-5.3-codex-spark` |
 | `claude-3-opus-20240229` | `gpt-5.3-codex-xhigh` |
 | 기본값 | `gpt-5.2-codex` |
+
+### 사용 가능한 Codex 모델 목록
+
+| 모델 | Effort | 비고 |
+|:---|:---|:---|
+| `gpt-5.4` | high | **현재 플래그십** (2026, gpt-5.2-codex 대체) |
+| `gpt-5` | high | GPT-5 베이스 (effort 별도 지정) |
+| `gpt-5-codex` | high | 에이전틱 코딩 특화 (공식 Responses API) |
+| `gpt-5-codex-mini` | medium | 경량 GPT-5-Codex 변형 |
+| `gpt-5.3-codex` | high | |
+| `gpt-5.3-codex-xhigh` | xhigh | |
+| `gpt-5.3-codex-medium` | medium | |
+| `gpt-5.3-codex-low` | low | |
+| `gpt-5.3-codex-spark` | low | 속도 최적화, >1000 tok/s |
+| `gpt-5.2-codex` | high | 프록시 기본값 |
+| `gpt-5.2-codex-xhigh` | xhigh | |
+| `gpt-5.2-codex-medium` | medium | |
+| `gpt-5.2-codex-low` | low | |
+| `gpt-5.1-codex` | high | |
+| `gpt-5.1-codex-max` | xhigh | |
+| `gpt-5.1-codex-mini` | medium | |
+
+단축 별칭: `gpt-5.4` → `gpt-5.4`, `gpt-5.3` → `gpt-5.3-codex`, `gpt-5.2` → `gpt-5.2-codex`, `gpt-5.1` → `gpt-5.1-codex`
 
 ### 커스텀 모델 매핑
 
@@ -116,6 +199,31 @@ export ANTHROPIC_DEFAULT_HAIKU_MODEL="gpt-5.3-codex-spark"
 # Sonnet 요청에 gpt-5.2-codex 사용
 export ANTHROPIC_DEFAULT_SONNET_MODEL="gpt-5.2-codex"
 ```
+
+### Effort 제어
+
+Claude Code 모델 선택 UI의 effort 슬라이더(`Low ← → High`)는 **GPT 모델 사용 시 API 요청에 포함되지 않습니다.** Claude 네이티브 모델에서만 동작합니다.
+
+Codex의 reasoning effort를 제어하려면 다음 두 가지 방법을 사용하세요:
+
+**방법 1 — 모델명에 effort suffix 포함** (모델별 개별 제어에 권장)
+
+```bash
+# .zshrc
+export ANTHROPIC_DEFAULT_SONNET_MODEL="gpt-5.3-codex-xhigh"   # xhigh
+export ANTHROPIC_DEFAULT_HAIKU_MODEL="gpt-5.3-codex-spark"     # low
+export ANTHROPIC_DEFAULT_OPUS_MODEL="gpt-5.2-codex"            # high (기본)
+```
+
+프록시가 모델명 suffix에서 effort를 자동 파싱합니다: `-xhigh` / `-high` / `-medium` / `-low` / `-spark`
+
+**방법 2 — `.env`에서 전역 설정**
+
+```env
+PROXY_DEFAULT_EFFORT=high
+```
+
+우선순위 (높음 → 낮음): 요청의 `thinking.budget_tokens` → 모델명 suffix/테이블 → `PROXY_DEFAULT_EFFORT` → `medium`
 
 ### 쉘 함수로 쉽게 설정하기
 
@@ -217,10 +325,15 @@ chatgpt-codex-proxy/
 │   ├── codex/
 │   │   ├── client.ts      # Codex API 클라이언트
 │   │   └── models.ts      # 모델 매핑
+│   ├── mcp/
+│   │   ├── config.ts      # ~/.claude.json MCP 서버 설정 읽기
+│   │   ├── client.ts      # HTTP + stdio MCP 클라이언트 (tools/list)
+│   │   └── registry.ts    # 툴 스키마 캐시 (싱글턴)
 │   ├── types/
 │   │   └── anthropic.ts   # 타입 정의
 │   └── utils/
 │       └── errors.ts      # 에러 처리
+├── .env.example           # 환경변수 참고 파일
 ├── package.json
 ├── tsconfig.json
 └── README.md
@@ -237,6 +350,8 @@ chatgpt-codex-proxy/
 | `ANTHROPIC_DEFAULT_SONNET_MODEL` | - | Sonnet → Codex 모델 매핑 |
 | `ANTHROPIC_DEFAULT_OPUS_MODEL` | - | Opus → Codex 모델 매핑 |
 | `PASSTHROUGH_MODE` | `true` | 기본 passthrough, `false/0/no/off`면 매핑 모드 |
+| `PROXY_DEFAULT_EFFORT` | _(자동)_ | Reasoning effort 오버라이드: `low` / `medium` / `high` / `xhigh`. 미설정 시 모델 테이블 → 이름 suffix → `medium` 순 결정 |
+| `PROXY_MCP_SERVERS` | _(비활성)_ | 주입할 MCP 서버: `all` 또는 `~/.claude.json` 키 이름(쉼표 구분) |
 
 ## 🔒 보안
 
