@@ -1,234 +1,85 @@
 # ChatGPT Codex Proxy
 
-> An Anthropic-compatible `/v1/messages` proxy that lets **Claude Code** talk to the **ChatGPT Codex** backend.
+> Run **Claude Code** on your **ChatGPT Plus/Pro subscription** — zero workflow change.
 
 - [한국어 README](./README_ko.md)
 
-## Overview
+## What is this?
 
-This project provides an **Anthropic Messages API-compatible** endpoint so you can run Claude Code against ChatGPT's Codex API by setting `ANTHROPIC_BASE_URL`.
+This proxy lets Claude Code talk to ChatGPT's Codex backend instead of Anthropic's API.
+You keep using `claude` exactly as before — same UI, same slash commands, same MCP tools — while inference is served by GPT.
 
 ```
-Claude Code                    chatgpt-codex-proxy              ChatGPT Codex API
-   │                               │                                │
-   │  POST /v1/messages            │  POST /codex/responses         │
-   │  (Anthropic format)           │  (Codex format)                │
-   │ ─────────────────────────────>│ ──────────────────────────────>│
-   │                               │                                │
-   │  Anthropic response           │  Codex SSE response            │
-   │ <─────────────────────────────│<──────────────────────────────│
+Claude Code  ──POST /v1/messages──>  chatgpt-codex-proxy  ──POST /codex/responses──>  ChatGPT
+             <──Anthropic response──                       <──Codex SSE response──
 ```
+
+## When to use this
+
+| Situation | This proxy helps? |
+|---|---|
+| Anthropic quota exhausted / rate limited | ✅ Switch to GPT with one env var |
+| Want to try GPT models without leaving Claude Code | ✅ Same workflow, different backend |
+| Have ChatGPT Plus/Pro idle and want to make use of it | ✅ No API key cost |
+| Need MCP tools (Stitch, Linear, etc.) to work with GPT | ✅ Only proxy that bridges this |
+| Need an OpenAI-compatible endpoint for other clients | Use [ChatMock](https://github.com/RayBytes/ChatMock) instead |
+| Need Ollama compatibility | Use [ChatMock](https://github.com/RayBytes/ChatMock) instead |
+
+## Why this, not ChatMock or similar tools
+
+**ChatMock** and similar projects expose an OpenAI/Ollama-compatible API — great for general-purpose clients, but you'd have to switch away from Claude Code entirely.
+
+**This proxy** is built specifically for Claude Code:
+
+- **Zero workflow change** — `claude` command, keybindings, CLAUDE.md, slash commands, all work unchanged.
+- **MCP tools cross the boundary** — Claude Code's MCP servers (Stitch, Linear, Chrome DevTools, etc.) are normally only available to Claude's backend. This proxy reads `~/.claude.json` at startup, connects to your MCP servers, and injects their tool schemas into every GPT request. GPT gets the same tool access Claude would have.
+- **Parallel tool call safety** — the proxy detects mutating tools (Edit, Write, Delete, Bash) and automatically disables `parallel_tool_calls` to prevent unsafe concurrent file operations.
+- **Claude model name passthrough** — use `--model claude-sonnet-4-20250514` as usual; the proxy maps it to the right Codex model automatically. Or use GPT model names directly in passthrough mode.
 
 ## Example session
-
-Below is an example Claude Code session with this proxy connected and working normally.
 
 ![chatgpt-codex-proxy example session](./chatgpt-codex-proxy.png)
 
 ## Features
 
-- Anthropic Messages API compatibility (`POST /v1/messages`)
-- OAuth 2.0 login for ChatGPT Codex (ChatGPT Plus/Pro required)
-- Automatic request/response transformation (Anthropic ↔ Codex)
-- SSE streaming support (`stream=true`)
-- Claude → Codex model mapping (with env overrides)
-- **MCP tool injection** — proxy reads `~/.claude.json`, connects to your MCP servers at startup, and injects their tool schemas into every Codex request
+- Anthropic Messages API compatible (`POST /v1/messages`)
+- OAuth 2.0 login — no API key, just your ChatGPT subscription
+- Full request/response transformation (Anthropic ↔ Codex)
+- SSE streaming
+- Claude → Codex model mapping with env overrides
+- **MCP tool injection** (see below)
 
-## Installation
+## Quick start
 
 ```bash
-git clone <your-repo-url>
+git clone <repo-url>
 cd chatgpt-codex-proxy
+npm install && npm run build
 
-npm install
-npm run build
-```
-
-## Usage
-
-### 1) Login
-
-```bash
+# Login with your ChatGPT account (browser opens)
 npm run login
-```
 
-This opens a browser window for OAuth login. You need an active ChatGPT Plus/Pro subscription.
-
-### 2) Configure `.env`
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` to set your preferences:
-
-```env
-# Enable MCP tool injection (comma-separated server names from ~/.claude.json, or "all")
-PROXY_MCP_SERVERS=stitch,linear
-```
-
-### 3) Run the server
-
-```bash
-# Development mode
+# Start the proxy
 npm run dev
-
-# Production mode
-npm run start
 ```
 
-### 4) Configure Claude Code
+Then in another terminal:
 
 ```bash
 export ANTHROPIC_BASE_URL=http://127.0.0.1:19080
-
-# token is sourced from either variable (kept for compatibility)
-export ANTHROPIC_AUTH_TOKEN=your_chatgpt_oauth_token
-export ANTHROPIC_API_KEY="$ANTHROPIC_AUTH_TOKEN"
-
+export ANTHROPIC_API_KEY=dummy   # value is unused; variable must be set
 claude
 ```
 
-## CLI commands
+That's it. Claude Code is now running on GPT.
 
-| Command | Description |
-|---|---|
-| `npm run login` | OAuth login |
-| `npm run logout` | Delete token |
-| `npm run status` | Show auth status |
-| `npm run dev` | Start dev server (hot reload) |
-| `npm run start` | Start production server |
+### Optional: shell helper
 
-## MCP tool injection
-
-Claude Code's MCP tools are normally only visible to the Claude backend. This proxy bridges that gap: it reads your `~/.claude.json` at startup, connects to the configured MCP servers, fetches their tool schemas, and injects them into every Codex request. The GPT model can then call those tools just like Claude would.
-
-```
-Claude Code                 chatgpt-codex-proxy                  ChatGPT Codex API
-   │                               │                                    │
-   │  tools: [Edit, Bash, ...]     │  tools: [Edit, Bash, ...           │
-   │  (deferred: stitch, qmd, ...) │          + mcp__stitch__*          │
-   │                               │          + mcp__qmd__*  ]          │
-   │ ─────────────────────────────>│ ──────────────────────────────────>│
-```
-
-### Configuration
-
-Set `PROXY_MCP_SERVERS` in your `.env` file:
-
-```env
-# Specific servers only (names must match keys in ~/.claude.json)
-PROXY_MCP_SERVERS=stitch,linear
-
-# All servers registered in ~/.claude.json
-PROXY_MCP_SERVERS=all
-
-# Disabled (default)
-PROXY_MCP_SERVERS=
-```
-
-At startup you'll see:
-```
-[mcp-registry] connecting to: stitch, linear
-[mcp-registry] stitch: 8 tools loaded
-[mcp-registry] linear: 6 tools loaded
-[mcp-registry] ready: 14 total MCP tools
-```
-
-### How it works
-
-1. On startup the proxy reads `~/.claude.json` → `mcpServers`
-2. For each enabled server it runs the MCP handshake (`initialize` → `tools/list`) — HTTP or stdio, whichever the server uses
-3. Schemas are cached in memory for the lifetime of the proxy process
-4. On every `/v1/messages` request the cached tools are appended to the Codex `tools` array (tool names follow the Claude Code convention: `mcp__serverName__toolName`)
-5. When GPT calls a tool, Claude Code intercepts the `tool_use` response, executes the real MCP call, and sends the result back through the proxy
-
-Both HTTP (`type: http`) and stdio (`command`) MCP servers are supported. Per-server timeout is 20 seconds.
-
-## Model mapping
-
-### Default mapping
-
-| Claude model | Codex model |
-|---|---|
-| `claude-sonnet-4-20250514` | `gpt-5.2-codex` |
-| `claude-3-5-sonnet-20241022` | `gpt-5.2-codex` |
-| `claude-3-haiku-20240307` | `gpt-5.3-codex-spark` |
-| `claude-3-opus-20240229` | `gpt-5.3-codex-xhigh` |
-| (fallback) | `gpt-5.2-codex` |
-
-### Available Codex models
-
-| Model | Effort | Notes |
-|---|---|---|
-| `gpt-5.4` | high | **Current flagship** (2026, replaces gpt-5.2-codex as default) |
-| `gpt-5` | high | Base GPT-5 with separate effort setting |
-| `gpt-5-codex` | high | GPT-5 optimized for agentic coding (official Responses API) |
-| `gpt-5-codex-mini` | medium | Lightweight GPT-5-Codex variant |
-| `gpt-5.3-codex` | high | |
-| `gpt-5.3-codex-xhigh` | xhigh | |
-| `gpt-5.3-codex-medium` | medium | |
-| `gpt-5.3-codex-low` | low | |
-| `gpt-5.3-codex-spark` | low | Speed-optimized, >1000 tok/s |
-| `gpt-5.2-codex` | high | Proxy default |
-| `gpt-5.2-codex-xhigh` | xhigh | |
-| `gpt-5.2-codex-medium` | medium | |
-| `gpt-5.2-codex-low` | low | |
-| `gpt-5.1-codex` | high | |
-| `gpt-5.1-codex-max` | xhigh | |
-| `gpt-5.1-codex-mini` | medium | |
-
-Shorthand aliases: `gpt-5.4` → `gpt-5.4`, `gpt-5.3` → `gpt-5.3-codex`, `gpt-5.2` → `gpt-5.2-codex`, `gpt-5.1` → `gpt-5.1-codex`
-
-### Environment overrides
-
-You can override the Codex model used for each Claude family:
-
-| Env var | Description |
-|---|---|
-| `ANTHROPIC_DEFAULT_HAIKU_MODEL` | Codex model used when a Haiku model is requested |
-| `ANTHROPIC_DEFAULT_SONNET_MODEL` | Codex model used when a Sonnet model is requested |
-| `ANTHROPIC_DEFAULT_OPUS_MODEL` | Codex model used when an Opus model is requested |
-| `PASSTHROUGH_MODE` | If `true/1/yes/on`, pass the requested model name directly to Codex |
-
-Priority: if `PASSTHROUGH_MODE=true` → passthrough; otherwise env overrides → default mapping.
-
-### Effort control
-
-Claude Code's model selector UI has an effort slider (`Low ← → High`), but **this slider is not included in API requests when using GPT models** — it only affects native Claude models.
-
-To control reasoning effort for Codex, use one of these two methods instead:
-
-**Method 1 — Encode effort in the model name** (recommended for per-model control)
+Add this to `.zshrc`/`.bashrc` for a quick `gpt` alias:
 
 ```bash
-# .zshrc
-export ANTHROPIC_DEFAULT_SONNET_MODEL="gpt-5.3-codex-xhigh"   # xhigh
-export ANTHROPIC_DEFAULT_HAIKU_MODEL="gpt-5.3-codex-spark"     # low
-export ANTHROPIC_DEFAULT_OPUS_MODEL="gpt-5.2-codex"            # high (default)
-```
-
-The proxy automatically reads the effort from the model name suffix: `-xhigh` / `-high` / `-medium` / `-low` / `-spark`.
-
-**Method 2 — Global override via `.env`**
-
-```env
-PROXY_DEFAULT_EFFORT=high
-```
-
-Priority order (highest → lowest): `thinking.budget_tokens` in request → model name suffix/table → `PROXY_DEFAULT_EFFORT` → `medium`
-
-### Optional shell helper
-
-Add this to your `.zshrc`/`.bashrc` to quickly launch Claude Code against the local proxy:
-
-```bash
-# Claude Code + ChatGPT Codex proxy (simple mode)
-# Start the server separately; this just sets env vars.
-
 gpt() {
   emulate -L zsh
-
   local proxy_port="${CHATGPT_CODEX_PROXY_PORT:-19080}"
   local token="${ANTHROPIC_AUTH_TOKEN:-${ANTHROPIC_API_KEY:-dummy}}"
 
@@ -244,21 +95,129 @@ gpt() {
 }
 ```
 
-Troubleshooting checklist:
+## MCP tool injection
 
-- Health check: `curl -fsS http://127.0.0.1:${CHATGPT_CODEX_PROXY_PORT:-19080}/health`
-- Port in use: `lsof -tiTCP:${CHATGPT_CODEX_PROXY_PORT:-19080} -sTCP:LISTEN -nP`
-- Passthrough test: `gpt --model gpt-5.2`
-- Mapping mode test: `PASSTHROUGH_MODE=false gpt --model gpt-5.2`
-- Recent logs: `tail -n 120 /tmp/chatgpt-codex-proxy.log`
+Claude Code's MCP tools are normally invisible to non-Claude backends. This proxy bridges that gap.
 
-Tool-calling smoke test:
+```
+Claude Code                   chatgpt-codex-proxy               ChatGPT Codex API
+   │  tools: [Edit, Bash, ...]      │  tools: [Edit, Bash, ...        │
+   │  (deferred: stitch, qmd, ...)  │          + mcp__stitch__*       │
+   │                                │          + mcp__qmd__*  ]       │
+   │ ──────────────────────────────>│ ──────────────────────────────> │
+```
 
-- `python3 scripts/tool_calling_smoke.py --base-url http://127.0.0.1:19080 --model gpt-5.2`
+**How it works:**
+1. On startup: reads `~/.claude.json` → `mcpServers`
+2. Runs MCP handshake (`initialize` → `tools/list`) for each enabled server
+3. Caches schemas in memory for the lifetime of the proxy process
+4. On every `/v1/messages` request: appends cached tools to the Codex `tools` array
+5. When GPT calls a tool: Claude Code receives the `tool_use` response, executes the real MCP call, and sends the result back through the proxy
+
+Both HTTP (`type: http`) and stdio (`command`) MCP servers are supported.
+
+**Configuration** — set `PROXY_MCP_SERVERS` in `.env`:
+
+```env
+# Specific servers (names must match keys in ~/.claude.json)
+PROXY_MCP_SERVERS=stitch,linear
+
+# All servers registered in ~/.claude.json
+PROXY_MCP_SERVERS=all
+
+# Disabled (default)
+PROXY_MCP_SERVERS=
+```
+
+Startup log:
+```
+[mcp-registry] connecting to: stitch, linear
+[mcp-registry] stitch: 8 tools loaded
+[mcp-registry] linear: 6 tools loaded
+[mcp-registry] ready: 14 total MCP tools
+```
+
+## Configuration
+
+### `.env` setup
+
+```bash
+cp .env.example .env
+```
+
+### Model mapping
+
+By default (`PASSTHROUGH_MODE=true`) the proxy forwards whatever model name Claude Code sends straight to Codex. Set `PASSTHROUGH_MODE=false` to enable automatic Claude → Codex mapping:
+
+| Claude model | Codex model |
+|---|---|
+| `claude-sonnet-4-20250514` | `gpt-5.2-codex` |
+| `claude-3-5-sonnet-20241022` | `gpt-5.2-codex` |
+| `claude-3-haiku-20240307` | `gpt-5.3-codex-spark` |
+| `claude-3-opus-20240229` | `gpt-5.3-codex-xhigh` |
+| (fallback) | `gpt-5.2-codex` |
+
+Override per family:
+
+```env
+ANTHROPIC_DEFAULT_HAIKU_MODEL=gpt-5.3-codex-spark
+ANTHROPIC_DEFAULT_SONNET_MODEL=gpt-5.2-codex
+ANTHROPIC_DEFAULT_OPUS_MODEL=gpt-5.2-codex
+```
+
+### Available Codex models
+
+| Model | Effort | Notes |
+|---|---|---|
+| `gpt-5.4` | high | Flagship (2026) |
+| `gpt-5` | high | |
+| `gpt-5-codex` | high | Optimized for agentic coding |
+| `gpt-5-codex-mini` | medium | |
+| `gpt-5.3-codex` | high | |
+| `gpt-5.3-codex-xhigh` | xhigh | |
+| `gpt-5.3-codex-medium` | medium | |
+| `gpt-5.3-codex-low` | low | |
+| `gpt-5.3-codex-spark` | low | Speed-optimized, >1000 tok/s |
+| `gpt-5.2-codex` | high | Proxy default |
+| `gpt-5.2-codex-xhigh` | xhigh | |
+| `gpt-5.2-codex-medium` | medium | |
+| `gpt-5.2-codex-low` | low | |
+| `gpt-5.1-codex` | high | |
+| `gpt-5.1-codex-max` | xhigh | |
+| `gpt-5.1-codex-mini` | medium | |
+
+Shorthand aliases: `gpt-5.3` → `gpt-5.3-codex`, `gpt-5.2` → `gpt-5.2-codex`, `gpt-5.1` → `gpt-5.1-codex`
+
+### Effort control
+
+Claude Code's effort slider only affects native Claude models — it is not included in API requests when using GPT models. Control reasoning effort via:
+
+**Method 1 — model name suffix** (recommended)
+
+```bash
+export ANTHROPIC_DEFAULT_SONNET_MODEL="gpt-5.3-codex-xhigh"  # xhigh
+export ANTHROPIC_DEFAULT_HAIKU_MODEL="gpt-5.3-codex-spark"   # low
+```
+
+**Method 2 — global override**
+
+```env
+PROXY_DEFAULT_EFFORT=high
+```
+
+Priority: `thinking.budget_tokens` in request → model name suffix/table → `PROXY_DEFAULT_EFFORT` → `medium`
+
+## CLI commands
+
+| Command | Description |
+|---|---|
+| `npm run login` | OAuth login (browser) |
+| `npm run logout` | Delete stored token |
+| `npm run status` | Show auth status |
+| `npm run dev` | Start dev server (hot reload) |
+| `npm run start` | Start production server |
 
 ## API compatibility
-
-### Supported
 
 | Capability | Support | Notes |
 |---|---:|---|
@@ -266,20 +225,46 @@ Tool-calling smoke test:
 | Streaming | ✅ | SSE |
 | Multi-turn | ✅ | |
 | System prompt | ✅ | Mapped to `instructions` |
+| Tool calling | ✅ | Full tool_use/tool_result cycle |
 | Image input | ⚠️ | Limited |
-| Tool calling | ✅ | Bridges `tools/tool_choice/tool_use/tool_result` |
 | Temperature | ❌ | Not supported by Codex backend |
 | Max tokens | ❌ | Not supported by Codex backend |
 
-Notes:
-- Tool calling requires the underlying Codex model/backend to support function calling.
-- Anthropic `image(base64)` is transformed into Responses API `input_image` (data URL).
-- Multi-turn conversion uses role-aware mapping (`user.text → input_text`, `assistant.text → output_text`).
+## Environment variables
 
-### Endpoints
+| Variable | Default | Description |
+|---|---:|---|
+| `PORT` | `19080` | Server port |
+| `PROXY_JSON_LIMIT` | `20mb` | JSON body size limit |
+| `CODEX_BASE_URL` | `https://chatgpt.com/backend-api` | Codex API base URL |
+| `PASSTHROUGH_MODE` | `true` | `false` to enable Claude→Codex model mapping |
+| `ANTHROPIC_DEFAULT_HAIKU_MODEL` | - | Codex model for Haiku requests |
+| `ANTHROPIC_DEFAULT_SONNET_MODEL` | - | Codex model for Sonnet requests |
+| `ANTHROPIC_DEFAULT_OPUS_MODEL` | - | Codex model for Opus requests |
+| `PROXY_DEFAULT_EFFORT` | _(auto)_ | `low` / `medium` / `high` / `xhigh` |
+| `PROXY_MCP_SERVERS` | _(disabled)_ | `all` or comma-separated server names from `~/.claude.json` |
 
-- `POST /v1/messages` — Anthropic Messages API
-- `GET /health` — Health check
+## Troubleshooting
+
+```bash
+# Health check
+curl -fsS http://127.0.0.1:19080/health
+
+# Port in use
+lsof -tiTCP:19080 -sTCP:LISTEN -nP
+
+# Passthrough test
+gpt --model gpt-5.2
+
+# Mapping mode test
+PASSTHROUGH_MODE=false gpt --model claude-sonnet-4-20250514
+
+# Recent logs
+tail -n 120 /tmp/chatgpt-codex-proxy.log
+
+# Tool calling smoke test
+python3 scripts/tool_calling_smoke.py --base-url http://127.0.0.1:19080 --model gpt-5.2
+```
 
 ## Project structure
 
@@ -300,61 +285,30 @@ chatgpt-codex-proxy/
 │   │   └── models.ts      # Model mapping
 │   ├── mcp/
 │   │   ├── config.ts      # Read ~/.claude.json MCP server configs
-│   │   ├── client.ts      # HTTP + stdio MCP clients (tools/list)
+│   │   ├── client.ts      # HTTP + stdio MCP clients
 │   │   └── registry.ts    # Tool schema cache (singleton)
 │   ├── types/
 │   │   └── anthropic.ts   # Types
 │   └── utils/
 │       └── errors.ts      # Error handling
-├── .env.example           # Environment variable reference
+├── .env.example
 ├── package.json
 ├── tsconfig.json
 └── README.md
 ```
 
-## Environment variables
-
-| Variable | Default | Description |
-|---|---:|---|
-| `PORT` | `19080` | Server port |
-| `PROXY_JSON_LIMIT` | `20mb` | JSON body size limit (for image payloads) |
-| `CODEX_BASE_URL` | `https://chatgpt.com/backend-api` | Codex API base URL |
-| `ANTHROPIC_DEFAULT_HAIKU_MODEL` | - | Haiku → Codex model override |
-| `ANTHROPIC_DEFAULT_SONNET_MODEL` | - | Sonnet → Codex model override |
-| `ANTHROPIC_DEFAULT_OPUS_MODEL` | - | Opus → Codex model override |
-| `PASSTHROUGH_MODE` | `true` | Default passthrough; set `false/0/no/off` to use mapping |
-| `PROXY_DEFAULT_EFFORT` | _(auto)_ | Reasoning effort override: `low`, `medium`, `high`, or `xhigh`. If unset: model table → name suffix → `medium` |
-| `PROXY_MCP_SERVERS` | _(disabled)_ | MCP servers to inject: `all` or comma-separated names from `~/.claude.json` |
-
 ## Security
 
-### Recommended: local-only usage
-
-This project is designed for **personal, local-machine usage**.
+Designed for **personal, local-machine usage only**.
 
 ```bash
-npm run dev  # bind to localhost only
+npm run dev  # binds to localhost only
 export ANTHROPIC_BASE_URL=http://127.0.0.1:19080
-claude
 ```
 
-### If you deploy this to a server (required hardening)
+If you deploy to a server: add authentication, restrict CORS, add rate limiting, set token file permissions to `600`, add monitoring.
 
-If you clone/fork and deploy this to any **server / cloud / shared network**, implement all of the following:
-
-1) Add authentication (e.g. API key)
-2) Restrict CORS to trusted origins
-3) Add rate limiting
-4) Lock down token file permissions (`chmod 600 ~/.chatgpt-codex-proxy/tokens.json`)
-5) Add monitoring and usage logging
-
-Also: do not bind publicly (avoid `0.0.0.0`) unless you understand the exposure and have implemented the above controls.
-
-## Notes
-
-- Tokens are stored at `~/.chatgpt-codex-proxy/tokens.json`
-- Tokens are refreshed automatically (with a 5-minute buffer)
-- ChatGPT Plus/Pro subscription is required
+Do not bind to `0.0.0.0` unless you have implemented all of the above.
 
 ## License
 
