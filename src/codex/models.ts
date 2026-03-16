@@ -148,46 +148,29 @@ export const CODEX_MODEL_EFFORT: Record<string, string> = {
 
 /*
 [목적]
-Claude Code의 thinking.budget_tokens 값을 Codex reasoning effort 수준으로 변환한다.
-
-[입력]
-- budgetTokens: Claude API thinking.budget_tokens 값
-
-[출력]
-- effort 문자열: "low" | "medium" | "high" | "xhigh"
-*/
-function budgetTokensToEffort(budgetTokens: number): string {
-    if (budgetTokens >= 20_000) return "xhigh";
-    if (budgetTokens >= 8_000) return "high";
-    if (budgetTokens >= 2_000) return "medium";
-    return "low";
-}
-
-/*
-[목적]
-최종 Codex 모델명과 선택적 thinking 설정으로 reasoning effort 값을 결정한다.
+최종 Codex 모델명으로 reasoning effort 값을 결정한다.
+Claude의 thinking.budget_tokens와 Codex의 effort는 별개 개념이므로 변환하지 않는다.
 
 [입력]
 - codexModel: mapAnthropicModelToCodex가 반환한 최종 모델명
-- budgetTokens: Claude API thinking.budget_tokens (있을 경우)
 
 [출력]
 - effort 문자열: "low" | "medium" | "high" | "xhigh"
 
 [우선순위]
-1. thinking.budget_tokens (Claude Code thinking 설정 → passthrough)
+1. PROXY_DEFAULT_EFFORT 환경변수 (설정 시 강제 적용)
 2. CODEX_MODEL_EFFORT 테이블 (등록된 모델의 고정 매핑)
 3. 모델명 suffix 파싱 (-xhigh / -high / -medium / -spark / -low)
-4. PROXY_DEFAULT_EFFORT 환경변수 (전역 폴백)
-5. 기본값 "medium"
+4. 기본값 "medium"
 
 [수정시 영향]
 - effort가 바뀌면 Codex 추론 깊이/속도/비용이 달라진다
 */
-export function getEffortForModel(codexModel: string, budgetTokens?: number): string {
-    // 1. Claude Code thinking 설정 → passthrough
-    if (budgetTokens !== undefined && budgetTokens > 0) {
-        return budgetTokensToEffort(budgetTokens);
+export function getEffortForModel(codexModel: string): string {
+    // 1. 환경변수 강제 적용 (설정 시 최우선)
+    const envEffort = process.env.PROXY_DEFAULT_EFFORT?.trim().toLowerCase();
+    if (envEffort && ["low", "medium", "high", "xhigh"].includes(envEffort)) {
+        return envEffort;
     }
 
     // 2. 등록된 모델 테이블
@@ -200,12 +183,6 @@ export function getEffortForModel(codexModel: string, budgetTokens?: number): st
     if (m.includes("-high")) return "high";
     if (m.includes("-medium")) return "medium";
     if (m.includes("-spark") || m.includes("-low")) return "low";
-
-    // 4. 환경변수 전역 폴백
-    const envEffort = process.env.PROXY_DEFAULT_EFFORT?.trim().toLowerCase();
-    if (envEffort && ["low", "medium", "high", "xhigh"].includes(envEffort)) {
-        return envEffort;
-    }
 
     return "medium";
 }
