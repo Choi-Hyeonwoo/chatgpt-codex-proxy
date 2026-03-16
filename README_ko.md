@@ -19,6 +19,12 @@ Claude Code                    chatgpt-codex-proxy              ChatGPT API
     │ <─────────────────────────────│<──────────────────────────────│
 ```
 
+## 실행 예시
+
+아래 화면은 이 프로젝트를 정상적으로 연결했을 때 Claude Code에서 볼 수 있는 예시입니다.
+
+![chatgpt-codex-proxy 실행 예시](./chatgpt-codex-proxy.png)
+
 ## 기능
 
 - ✅ Anthropic Messages API 호환 (`/v1/messages`)

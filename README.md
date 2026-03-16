@@ -19,6 +19,12 @@ Claude Code                    chatgpt-codex-proxy              ChatGPT Codex AP
    │ <─────────────────────────────│<──────────────────────────────│
 ```
 
+## Example session
+
+Below is an example Claude Code session with this proxy connected and working normally.
+
+![chatgpt-codex-proxy example session](./chatgpt-codex-proxy.png)
+
 ## Features
 
 - Anthropic Messages API compatibility (`POST /v1/messages`)
