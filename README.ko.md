@@ -2,7 +2,7 @@
 
 > **Claude Code**를 **ChatGPT Plus/Pro 구독**으로 실행하세요 — 워크플로우 변경 없이.
 
-- [English README](./README.md)
+[🇺🇸 English](./README.md) | 🇰🇷 한국어
 
 ## 무엇인가?
 
