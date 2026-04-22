@@ -2,7 +2,7 @@
 
 > Run **Claude Code** on your **ChatGPT Plus/Pro subscription** — zero workflow change.
 
-- [한국어 README](./README_ko.md)
+🇺🇸 English | [🇰🇷 한국어](./README.ko.md)
 
 ## What is this?
 
@@ -250,17 +250,86 @@ Priority: `thinking.budget_tokens` in request → model name suffix/table → `P
 
 ## Troubleshooting
 
+### 1. `Port 1455 already in use`
+
+Port `1455` is used by the OAuth callback server during `npm run login`. If a previous login attempt crashed or is still running, the new login will fail.
+
+```bash
+# Find the process holding 1455
+lsof -i :1455
+
+# Kill it (replace <pid> with the number from the output above)
+kill <pid>
+
+# Or in one shot
+lsof -ti:1455 | xargs kill -9
+
+# Then retry
+npm run login
+```
+
+The proxy's own HTTP port is `19080` (configurable via `PORT`). Apply the same `lsof` / `kill` steps if that port is stuck.
+
+### 2. `401 Not authenticated`
+
+Your ChatGPT OAuth tokens have expired or are missing. Tokens are stored at `~/.chatgpt-codex-proxy/tokens.json`.
+
+```bash
+# Inspect the token file (safe — contents are your own OAuth refresh/access tokens)
+ls -la ~/.chatgpt-codex-proxy/tokens.json
+
+# Delete and re-authenticate
+rm ~/.chatgpt-codex-proxy/tokens.json
+npm run login
+```
+
+If `npm run login` opens the browser but nothing happens after sign-in, check that port `1455` is free (see #1) and that `http://localhost:1455/auth/callback` is not blocked by a firewall or VPN.
+
+### 3. `ChatGPT account does not support gpt-5.4-codex`
+
+Not every ChatGPT plan is entitled to the `gpt-5.4-codex` model family. The proxy probes entitlement at startup and automatically falls back to `gpt-5.4` when `gpt-5.4-codex` is unavailable.
+
+Two ways to control the behaviour:
+
+```bash
+# A) Disable passthrough so the proxy always resolves via the mapping table.
+export PASSTHROUGH_MODE=0
+
+# B) Pin the fallback explicitly via env overrides (see .env.example).
+export ANTHROPIC_DEFAULT_SONNET_MODEL=gpt-5.4
+export ANTHROPIC_DEFAULT_OPUS_MODEL=gpt-5.4
+export ANTHROPIC_DEFAULT_HAIKU_MODEL=gpt-5.3-codex-spark
+```
+
+The startup probe logs which Codex models your account can reach. Check the log output after `npm run dev` to confirm the resolved defaults.
+
+### 4. SSE stream freezes / memory balloons on long responses
+
+Long Codex responses stream over SSE. If the client stops draining (slow consumer, paused terminal, dropped TCP) the proxy used to buffer without bound; v0.4.0 fixed this with backpressure handling.
+
+```bash
+# Turn on verbose SSE logging to see where the stream stalls
+LOG_LEVEL=debug npm run dev
+
+# Tail recent proxy output
+tail -n 200 /tmp/chatgpt-codex-proxy.log
+```
+
+If you still see freezes: confirm you are on v0.4.0+ (`cat package.json | grep '"version"'`), check your client's SSE timeout (Claude Code defaults to 90s — bump `API_TIMEOUT_MS` if needed), and verify no proxy/VPN in the middle is buffering responses.
+
+### Quick diagnostics
+
 ```bash
 # Health check
 curl -fsS http://127.0.0.1:19080/health
 
-# Port in use
+# Check what's holding the proxy port
 lsof -tiTCP:19080 -sTCP:LISTEN -nP
 
-# Passthrough test
+# Passthrough smoke test
 gpt --model gpt-5.2
 
-# Mapping mode test
+# Mapping-mode smoke test
 PASSTHROUGH_MODE=false gpt --model claude-sonnet-4-20250514
 
 # Recent logs
