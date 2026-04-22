@@ -314,6 +314,28 @@ If you deploy to a server: add authentication, restrict CORS, add rate limiting,
 
 Do not bind to `0.0.0.0` unless you have implemented all of the above.
 
+## Versioning
+
+This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
+(`MAJOR.MINOR.PATCH`).
+
+- **MAJOR** — incompatible API or behavior changes.
+- **MINOR** — backwards-compatible feature additions.
+- **PATCH** — backwards-compatible bug fixes.
+
+While the version is `0.y.z` (pre-1.0), this proxy is considered alpha and
+breaking changes MAY land in minor releases. The API is expected to stabilize
+for a `1.0.0` release once the v0.5.0 milestone is complete.
+
+### Release tags
+
+Releases are tagged in git as `vMAJOR.MINOR.PATCH` (e.g., `v0.2.0`). Each
+tag has a matching section in [`CHANGELOG.md`](./CHANGELOG.md), which
+follows the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
+
+Unreleased work accumulates under the `## [Unreleased]` heading in the
+changelog and is promoted into a dated version stanza at tag time.
+
 ## License
 
 MIT
