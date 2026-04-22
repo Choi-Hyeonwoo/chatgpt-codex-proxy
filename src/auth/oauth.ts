@@ -27,6 +27,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { createLogger } from "../utils/logger.js";
 import { buildTokenData } from "./jwt.js";
 import { loadTokens, saveTokens, type TokenData } from "./token-storage.js";
+import { getValidToken as _getCachedToken, setRefreshFn } from "./token-cache.js";
 
 const log = createLogger("auth");
 
@@ -144,25 +145,32 @@ export async function refreshAccessToken(refreshToken: string): Promise<TokenDat
   });
 }
 
+// Register the refresh function into token-cache (avoids circular import).
+// This runs once at module load time.
+setRefreshFn(async () => {
+  const stored = loadTokens();
+  if (!stored) throw new Error("No stored tokens for refresh");
+  const newTokens = await refreshAccessToken(stored.refresh_token);
+  if (!newTokens) throw new Error("Token refresh returned null");
+  saveTokens(newTokens);
+  return newTokens;
+});
+
 /**
- * Get valid tokens (refresh if needed)
+ * Get valid tokens (refresh if needed).
+ * Delegates to token-cache for in-memory caching and concurrent dedup (#8).
+ * Returns null only when no stored tokens exist (not logged in).
  */
 export async function getValidTokens(): Promise<TokenData | null> {
-  const tokens = loadTokens();
-  if (!tokens) return null;
+  // If there are no stored tokens, user is not logged in.
+  const stored = loadTokens();
+  if (!stored) return null;
 
-  // Refresh if expired (with 5 min buffer)
-  if (Date.now() >= tokens.expires_at - 5 * 60 * 1000) {
-    log.info("Token expired, refreshing...");
-    const newTokens = await refreshAccessToken(tokens.refresh_token);
-    if (newTokens) {
-      saveTokens(newTokens);
-      return newTokens;
-    }
+  try {
+    return await _getCachedToken();
+  } catch {
     return null;
   }
-
-  return tokens;
 }
 
 /**
