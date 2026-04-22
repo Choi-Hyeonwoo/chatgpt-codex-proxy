@@ -1,0 +1,35 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Build + Test (Node 20)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+  env-example-sync:
+    name: .env.example drift check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure every process.env.X is templated
+        run: |
+          missing=$(comm -23 \
+            <(grep -rhoE 'process\.env\.[A-Z_]+' src | sed 's/process\.env\.//' | sort -u) \
+            <(grep -oE '^[A-Z_]+' .env.example | sort -u))
+          if [ -n "$missing" ]; then
+            echo "::error ::Missing env keys in .env.example:"
+            echo "$missing"
+            exit 1
+          fi
