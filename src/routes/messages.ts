@@ -26,10 +26,11 @@ import type { AnthropicRequest, AnthropicResponse } from "../types/anthropic.js"
 import { ProxyError } from "../utils/errors.js";
 import { validateAnthropicRequest } from "../utils/validate.js";
 import { mcpToolRegistry } from "../mcp/registry.js";
-import { redactSecrets } from "../utils/sanitize.js";
+import { createLogger } from "../utils/logger.js";
 
 const router = Router();
 const codexClient = new CodexClient();
+const log = createLogger("messages");
 
 router.get("/health", (_req: Request, res: Response) => {
   res.status(200).json({
@@ -57,10 +58,8 @@ router.post(
       const inboundThinking = body.thinking?.type === "enabled"
         ? `enabled(budget=${body.thinking.budget_tokens ?? "?"})`
         : "disabled";
-      console.log(
-        redactSecrets(
-          `[chatgpt-codex-proxy] inbound messages model=${body.model} stream=${Boolean(body.stream)} messages=${body.messages.length} thinking=${inboundThinking}`,
-        ),
+      log.info(
+        `inbound messages model=${body.model} stream=${Boolean(body.stream)} messages=${body.messages.length} thinking=${inboundThinking}`,
       );
 
       // Transform and call Codex
@@ -86,12 +85,10 @@ router.post(
       const inboundToolChoice = body.tool_choice?.type ?? "none";
       const inboundToolNames = (body.tools ?? []).map((tool) => tool.name).join(",");
 
-      console.log(
-        redactSecrets(
-          `[chatgpt-codex-proxy] tool_plan inbound_parallel=${String(inboundParallel)} effective_parallel=${String(
-            codexRequest.parallel_tool_calls,
-          )} tool_count=${inboundToolCount} inbound_tool_choice=${inboundToolChoice} codex_tool_choice=${String(codexRequest.tool_choice)} tool_names=[${inboundToolNames}]`,
-        ),
+      log.debug(
+        `tool_plan inbound_parallel=${String(inboundParallel)} effective_parallel=${String(
+          codexRequest.parallel_tool_calls,
+        )} tool_count=${inboundToolCount} inbound_tool_choice=${inboundToolChoice} codex_tool_choice=${String(codexRequest.tool_choice)} tool_names=[${inboundToolNames}]`,
       );
 
       const codexResponse = await codexClient.createResponse(codexRequest);
@@ -108,10 +105,8 @@ router.post(
       const anthropicToolUse = (anthropicResponse.content ?? []).filter((block) => block.type === "tool_use").length;
       const anthropicText = (anthropicResponse.content ?? []).filter((block) => block.type === "text").length;
 
-      console.log(
-        redactSecrets(
-          `[chatgpt-codex-proxy] tool_diag parallel=${String(codexRequest.parallel_tool_calls)} codex_fn_calls=${codexFunctionCalls} codex_text_blocks=${codexOutputText} anthropic_tool_use=${anthropicToolUse} anthropic_text_blocks=${anthropicText} stop_reason=${anthropicResponse.stop_reason}`,
-        ),
+      log.debug(
+        `tool_diag parallel=${String(codexRequest.parallel_tool_calls)} codex_fn_calls=${codexFunctionCalls} codex_text_blocks=${codexOutputText} anthropic_tool_use=${anthropicToolUse} anthropic_text_blocks=${anthropicText} stop_reason=${anthropicResponse.stop_reason}`,
       );
 
       // Handle streaming

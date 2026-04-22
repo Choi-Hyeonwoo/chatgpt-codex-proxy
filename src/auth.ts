@@ -27,7 +27,9 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { createHash, randomBytes } from "node:crypto";
-import { redactSecrets } from "./utils/sanitize.js";
+import { createLogger } from "./utils/logger.js";
+
+const log = createLogger("auth");
 
 // OAuth Constants (from OpenAI Codex CLI)
 export const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
@@ -132,7 +134,7 @@ export async function exchangeCodeForTokens(
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    console.error("[chatgpt-codex-proxy] Token exchange failed:", res.status, redactSecrets(text));
+    log.error(`Token exchange failed status=${res.status}`, text);
     return null;
   }
 
@@ -143,7 +145,7 @@ export async function exchangeCodeForTokens(
   };
 
   if (!json?.access_token || !json?.refresh_token || !json?.expires_in) {
-    console.error("[chatgpt-codex-proxy] Token response missing fields");
+    log.error("Token response missing fields");
     return null;
   }
 
@@ -175,7 +177,7 @@ export async function refreshAccessToken(refreshToken: string): Promise<TokenDat
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    console.error("[chatgpt-codex-proxy] Token refresh failed:", res.status, redactSecrets(text));
+    log.error(`Token refresh failed status=${res.status}`, text);
     return null;
   }
 
@@ -209,7 +211,7 @@ export async function getValidTokens(): Promise<TokenData | null> {
 
   // Refresh if expired (with 5 min buffer)
   if (Date.now() >= tokens.expires_at - 5 * 60 * 1000) {
-    console.log("[chatgpt-codex-proxy] Token expired, refreshing...");
+    log.info("Token expired, refreshing...");
     const newTokens = await refreshAccessToken(tokens.refresh_token);
     if (newTokens) {
       saveTokens(newTokens);
@@ -261,9 +263,9 @@ export async function login(): Promise<TokenData | null> {
   url.searchParams.set("codex_cli_simplified_flow", "true");
   url.searchParams.set("originator", "codex_cli_rs");
 
-  console.log("\n========================================");
-  console.log("ChatGPT Codex Proxy - OAuth Login");
-  console.log("========================================\n");
+  log.info("========================================");
+  log.info("ChatGPT Codex Proxy - OAuth Login");
+  log.info("========================================");
 
   // Start local server FIRST, then open browser
   return new Promise((resolve) => {
@@ -292,14 +294,14 @@ export async function login(): Promise<TokenData | null> {
       `);
 
       if (returnedState !== state) {
-        console.error("[chatgpt-codex-proxy] State mismatch - possible CSRF attack");
+        log.error("State mismatch - possible CSRF attack");
         server.close();
         resolve(null);
         return;
       }
 
       if (!code) {
-        console.error("[chatgpt-codex-proxy] No authorization code received");
+        log.error("No authorization code received");
         server.close();
         resolve(null);
         return;
@@ -310,15 +312,15 @@ export async function login(): Promise<TokenData | null> {
         .then((tokens) => {
           if (tokens) {
             saveTokens(tokens);
-            console.log("\n✅ Authentication successful! Tokens saved.\n");
-            console.log(`Account ID: ${tokens.chatgpt_account_id}`);
-            console.log(`Token expires: ${new Date(tokens.expires_at).toLocaleString()}`);
+            log.info("Authentication successful! Tokens saved.");
+            log.info(`Account ID: ${tokens.chatgpt_account_id ?? "-"}`);
+            log.info(`Token expires: ${new Date(tokens.expires_at).toLocaleString()}`);
           }
           server.close();
           resolve(tokens);
         })
         .catch((err) => {
-          console.error("[chatgpt-codex-proxy] Token exchange error:", err);
+          log.error("Token exchange error", err);
           server.close();
           resolve(null);
         });
@@ -326,25 +328,25 @@ export async function login(): Promise<TokenData | null> {
 
     // Start server FIRST
     server.listen(1455, () => {
-      console.log("✓ Callback server started on port 1455");
-      console.log("Opening browser for authentication...");
-      console.log(`\nIf browser doesn't open, visit:\n${url.toString()}\n`);
+      log.info("Callback server started on port 1455");
+      log.info("Opening browser for authentication...");
+      log.info(`If browser doesn't open, visit: ${url.toString()}`);
 
       // Open browser AFTER server is ready
       openBrowser(url.toString());
     });
 
     server.on("error", (err: Error) => {
-      console.error("[chatgpt-codex-proxy] Server error:", err.message);
+      log.error(`Server error: ${err.message}`);
       if ((err as NodeJS.ErrnoException).code === "EADDRINUSE") {
-        console.error("Port 1455 is already in use. Another login may be in progress.");
+        log.error("Port 1455 is already in use. Another login may be in progress.");
       }
       resolve(null);
     });
 
     // Timeout after 5 minutes
     const timeout = setTimeout(() => {
-      console.error("[chatgpt-codex-proxy] Authentication timeout");
+      log.error("Authentication timeout");
       server.close();
       resolve(null);
     }, 5 * 60 * 1000);
@@ -362,7 +364,7 @@ export async function login(): Promise<TokenData | null> {
 export function logout(): void {
   if (existsSync(TOKEN_FILE)) {
     unlinkSync(TOKEN_FILE);
-    console.log("[chatgpt-codex-proxy] Logged out - tokens deleted");
+    log.info("Logged out - tokens deleted");
   }
 }
 

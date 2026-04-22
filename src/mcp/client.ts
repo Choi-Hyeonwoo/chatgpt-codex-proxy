@@ -18,6 +18,9 @@ HTTP와 stdio 두 가지 전송 방식을 지원한다.
 */
 import { spawn } from "node:child_process";
 import type { McpServerConfig } from "./config.js";
+import { createLogger } from "../utils/logger.js";
+
+const log = createLogger("mcp-client");
 
 export interface McpTool {
   name: string;
@@ -203,7 +206,7 @@ async function fetchToolsStdio(serverName: string, config: McpServerConfig): Pro
     });
 
     child.on("error", (err) => {
-      console.warn(`[mcp-client] ${serverName} process error: ${String(err)}`);
+      log.warn(`${serverName} process error: ${String(err)}`);
       settle([]);
     });
     child.on("exit", () => settle([]));
@@ -244,6 +247,6 @@ export async function fetchMcpTools(serverName: string, config: McpServerConfig)
   if (config.command) {
     return fetchToolsStdio(serverName, config);
   }
-  console.warn(`[mcp-client] ${serverName}: unsupported config (no url or command)`);
+  log.warn(`${serverName}: unsupported config (no url or command)`);
   return [];
 }

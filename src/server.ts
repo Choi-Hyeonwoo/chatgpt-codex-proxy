@@ -22,9 +22,11 @@ import cors from "cors";
 import messagesRouter from "./routes/messages.js";
 import { errorHandler, notFoundHandler } from "./utils/errors.js";
 import { redactSecrets } from "./utils/sanitize.js";
+import { createLogger } from "./utils/logger.js";
 
 const app = express();
 const jsonBodyLimit = process.env.PROXY_JSON_LIMIT ?? "20mb";
+const log = createLogger("http");
 
 app.use(cors());
 app.use(express.json({ limit: jsonBodyLimit }));
@@ -32,13 +34,11 @@ app.use(express.json({ limit: jsonBodyLimit }));
 app.use((req: Request, _res: Response, next: NextFunction) => {
   const startedAt = Date.now();
   const safeUrl = redactSecrets(req.originalUrl);
-  // eslint-disable-next-line no-console
-  console.log(`[REQ] ${req.method} ${safeUrl} - ${new Date().toISOString()}`);
+  log.info(`[REQ] ${req.method} ${safeUrl}`);
 
   _res.on("finish", () => {
     const durationMs = Date.now() - startedAt;
-    // eslint-disable-next-line no-console
-    console.log(`[RES] ${req.method} ${safeUrl} ${_res.statusCode} - ${durationMs}ms`);
+    log.info(`[RES] ${req.method} ${safeUrl} ${_res.statusCode} - ${durationMs}ms`);
   });
 
   next();
