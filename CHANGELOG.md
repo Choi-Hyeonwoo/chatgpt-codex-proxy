@@ -11,36 +11,64 @@ releases. See the "Versioning" section in `README.md` for policy details.
 ## [Unreleased]
 
 ### Added
+- (placeholder — work toward v0.4.0 lands here)
 
-- `.env.example` with all referenced environment variables documented (#19).
-- Log sanitizer that masks OAuth tokens, API keys, and other credential
-  shapes before they reach stdout or log files (#20).
-- Strict Anthropic request validation layer at the proxy entry point,
-  rejecting malformed `POST /v1/messages` payloads with 400 before any
-  upstream call (#23).
+## [0.3.0] - 2026-04-22
+
+Combined v0.3.0 (Security & Observability) and v0.5.0 (DX & CI) milestones,
+released together because they matured in parallel and have no breaking API.
+
+### Added
+- `.env.example` at repo root enumerating every referenced
+  `process.env.X` key (#19).
+- Log sanitizer utility that masks Bearer tokens, JWTs, OAuth URL
+  parameters, `chatgpt-account-id`, and refresh/access tokens before any
+  log sink receives them (#20).
+- LOG_LEVEL-aware logger (`error|warn|info|debug`) with automatic
+  sanitizer chaining and scope prefixing; all prior `console.*` call
+  sites routed through it (#28).
+- Strict Anthropic request validation at the proxy entry point, rejecting
+  malformed `POST /v1/messages` payloads with HTTP 400 before any upstream
+  call (#23).
+- GitHub Actions CI workflow with two jobs: `test` (Node 20, `npm ci`,
+  `npm run build`, `npm test`) and `env-example-sync` (fails if a new
+  `process.env.X` is added without updating `.env.example`) (#24).
+- English `README.md` with Quickstart, Configuration, Usage examples,
+  Troubleshooting (4 scenarios), and Contributing sections; Korean
+  original preserved as `README.ko.md` with a language toggle at the top
+  of both files (#27).
+- `CHANGELOG.md` (this file) and a formal "Versioning" section in
+  `README.md` documenting the semver policy for a 0.y.z project (#14).
 - Meta tests ensuring `package.json` version and `CHANGELOG.md` structure
-  stay in sync (#14).
+  stay in sync at CI time (#14).
 
 ### Changed
-
-- Unified SSE parser across the Codex client. All streaming responses now
-  flow through a single parser, removing duplicated state machines (#21).
+- Unified SSE parser across the Codex client — all streaming responses
+  now flow through a single parser, removing duplicated state machines
+  and making the streaming path easier to audit (#21).
 - Consolidated per-family model priority lists into a single
   `FAMILY_PRIORITIES` map, so adding a new Codex model family only touches
   one place (#22).
-- `package.json` version lowered from `1.0.0` to `0.2.0` to reflect actual
-  project maturity (fork baseline, pre-stable) (#14).
+- `package.json` version bumped from `0.2.0` to `0.3.0`.
+
+### Fixed
+- SSE `outputTextParts` array was accumulating across responses;
+  it is now cleared after `finalResponse` and in the `finally` branch of
+  the streaming reader, bounding memory for long interactions (#25).
+
+### Refactored
+- Extracted a `buildTokenData` helper in `src/auth.ts`; both
+  `exchangeCodeForTokens` and `refreshAccessToken` now go through it,
+  with identical external behaviour (#29).
 
 ## [0.2.0] - 2026-04-22
 
 Initial versioned baseline after fork from
 [TBXark/chatgpt-codex-proxy](https://github.com/TBXark/chatgpt-codex-proxy).
 This stanza exists so the file has at least one released version; the
-substantive changes for 0.2.0 are captured in the `[Unreleased]` section
-above and will be promoted into a dated 0.3.0 stanza at the next tag.
+substantive changes for 0.2.0 are captured in the `[0.3.0]` section above.
 
 ### Added
-
 - Fork baseline imported from upstream `TBXark/chatgpt-codex-proxy`.
 
 ## Roadmap
@@ -48,10 +76,12 @@ above and will be promoted into a dated 0.3.0 stanza at the next tag.
 Upcoming milestones (tracked in GitHub Issues, promoted into CHANGELOG
 stanzas when tagged):
 
-- **v0.3.0** — request validation hardening, log sanitizer rollout,
-  documentation cleanup.
-- **v0.4.0** — model-mapping refactors, SSE edge-case coverage.
-- **v0.5.0** — first candidate for a `1.0.0` stabilization pass.
+- **v0.4.0** — refactor & tests (auth split, token cache, backpressure,
+  test suite expansion).
+- **v0.5.0** — DX & CI (already closed and folded into v0.3.0 above; the
+  standalone v0.5.0 tag is deferred until after v0.4.0 ships to keep the
+  tag sequence semver-clean).
 
-[Unreleased]: https://github.com/Choi-Hyeonwoo/chatgpt-codex-proxy/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Choi-Hyeonwoo/chatgpt-codex-proxy/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Choi-Hyeonwoo/chatgpt-codex-proxy/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Choi-Hyeonwoo/chatgpt-codex-proxy/releases/tag/v0.2.0
