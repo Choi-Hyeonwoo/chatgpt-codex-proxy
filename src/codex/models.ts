@@ -6,7 +6,7 @@
  * [주요 흐름]
  * 1. 입력 모델명을 family(haiku/sonnet/opus) 또는 명시적 Codex 모델로 분류한다.
  * 2. 환경변수 override가 있으면 우선 적용한다.
- * 3. 없으면 하드코딩된 기본 매핑으로 Codex 모델을 선택한다.
+ * 3. 없으면 하드코딩된 기본 매핑 또는 family priority로 Codex 모델을 선택한다.
  * 4. 최종 모델에 맞는 effort를 반환한다.
  *
  * [외부 연결]
@@ -15,11 +15,66 @@
  * [수정시 주의]
  * - 매핑 규칙이 바뀌면 동일한 Anthropic 요청도 다른 Codex 모델로 호출된다.
  * - PASSTHROUGH_MODE 기본값을 바꾸면 운영 동작이 크게 달라질 수 있다.
+ * - FAMILY_PRIORITIES는 family별 fallback 순위를 단일 소스로 관리한다.
+ *   sonnet 리스트에 xhigh가 포함되도록 유지해야 한다(이슈 #7).
  */
 
-function getEnvModelForFamily(
-    family: "haiku" | "sonnet" | "opus",
-): string | undefined {
+export type ModelFamily = "haiku" | "sonnet" | "opus";
+
+/**
+ * [FAMILY_PRIORITIES]
+ * family별 우선순위 리스트. 첫 번째 항목이 가장 선호되는 모델이다.
+ * 이전의 OPUS/SONNET/HAIKU/DEFAULT/MODEL_PRIORITY 개별 배열을 단일 객체로 통합했다(#7).
+ * - sonnet 리스트에 xhigh(고추론) 변종이 포함되어야 한다.
+ * - default는 family 미식별 시 fallback 용도.
+ */
+export const FAMILY_PRIORITIES = {
+    default: [
+        "gpt-5.4",
+        "gpt-5.2-codex",
+        "gpt-5.3-codex",
+        "gpt-5.1-codex",
+    ],
+    opus: [
+        "gpt-5.3-codex-xhigh",
+        "gpt-5.2-codex-xhigh",
+        "gpt-5.1-codex-max",
+        "gpt-5.4",
+        "gpt-5.3-codex",
+        "gpt-5.2-codex",
+    ],
+    sonnet: [
+        "gpt-5.3-codex-xhigh",
+        "gpt-5.2-codex-xhigh",
+        "gpt-5.2-codex",
+        "gpt-5.3-codex",
+        "gpt-5.4",
+        "gpt-5.1-codex",
+    ],
+    haiku: [
+        "gpt-5.3-codex-spark",
+        "gpt-5.3-codex-low",
+        "gpt-5.2-codex-low",
+        "gpt-5-codex-mini",
+        "gpt-5.1-codex-mini",
+    ],
+} as const satisfies Record<"default" | ModelFamily, readonly string[]>;
+
+/**
+ * @deprecated FAMILY_PRIORITIES.default 사용 권장. 하위호환 위해 재익스포트.
+ */
+export const MODEL_PRIORITY = FAMILY_PRIORITIES.default;
+
+/** @deprecated FAMILY_PRIORITIES.default 사용 권장. 하위호환 재익스포트. */
+export const DEFAULT_MODEL_PRIORITY = FAMILY_PRIORITIES.default;
+/** @deprecated FAMILY_PRIORITIES.opus 사용 권장. 하위호환 재익스포트. */
+export const OPUS_MODEL_PRIORITY = FAMILY_PRIORITIES.opus;
+/** @deprecated FAMILY_PRIORITIES.sonnet 사용 권장. 하위호환 재익스포트. */
+export const SONNET_MODEL_PRIORITY = FAMILY_PRIORITIES.sonnet;
+/** @deprecated FAMILY_PRIORITIES.haiku 사용 권장. 하위호환 재익스포트. */
+export const HAIKU_MODEL_PRIORITY = FAMILY_PRIORITIES.haiku;
+
+function getEnvModelForFamily(family: ModelFamily): string | undefined {
     const value =
         family === "haiku"
             ? process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL
@@ -42,7 +97,7 @@ const HARDCODED_MAPPING: Record<string, string> = {
     "gpt-5.4": "gpt-5.4",
 };
 
-const SUPPORTED_CODEX_MODELS = new Set<string>([
+export const SUPPORTED_CODEX_MODELS = new Set<string>([
     // gpt-5.4 / gpt-5 계열 (2025~2026 최신, Responses API)
     "gpt-5.4",
     "gpt-5",
@@ -65,7 +120,10 @@ const SUPPORTED_CODEX_MODELS = new Set<string>([
     "gpt-5.1-codex-mini",
 ]);
 
-function getModelFamily(model: string): "haiku" | "sonnet" | "opus" | null {
+/**
+ * 주어진 모델명을 family 로 분류한다. 미식별 시 null.
+ */
+export function getFamilyFor(model: string): ModelFamily | null {
     const m = model.toLowerCase();
     if (m.includes("haiku")) return "haiku";
     if (m.includes("opus")) return "opus";
@@ -77,6 +135,90 @@ function getModelFamily(model: string): "haiku" | "sonnet" | "opus" | null {
     )
         return "sonnet";
     return null;
+}
+
+/** @deprecated getFamilyFor 사용 권장. 기존 이름 하위호환. */
+export const getModelFamily = getFamilyFor;
+
+/**
+ * Runtime에서 사용 가능한 것으로 보고된 Codex 모델 집합.
+ * 비어있으면 runtime gating 미적용 (모든 SUPPORTED_CODEX_MODELS 허용).
+ */
+const runtimeAvailability: Set<string> = new Set();
+
+/**
+ * Runtime probe 결과를 기록한다. 전달된 집합이 비어있지 않으면
+ * 이후 family priority 선택 시 이 집합 내 모델만 후보가 된다.
+ */
+export function setRuntimeModelAvailability(models: Iterable<string>): void {
+    runtimeAvailability.clear();
+    for (const m of models) {
+        if (typeof m === "string" && m.trim()) {
+            runtimeAvailability.add(m.trim());
+        }
+    }
+}
+
+function isRuntimeGated(): boolean {
+    return runtimeAvailability.size > 0;
+}
+
+function isRuntimeAvailable(model: string): boolean {
+    if (!isRuntimeGated()) return true;
+    return runtimeAvailability.has(model);
+}
+
+/**
+ * priority 배열에서 runtime 에 사용 가능한 첫 번째 모델 반환.
+ * runtime gating 미적용 시 첫 번째 항목 그대로.
+ */
+export function firstRuntimeAvailable(
+    priority: readonly string[],
+): string | undefined {
+    for (const m of priority) {
+        if (isRuntimeAvailable(m)) return m;
+    }
+    return undefined;
+}
+
+/**
+ * family 에 대한 priority 기반 선택. 없으면 undefined.
+ */
+function pickFromFamily(family: ModelFamily | null): string | undefined {
+    const list = family ? FAMILY_PRIORITIES[family] : FAMILY_PRIORITIES.default;
+    return firstRuntimeAvailable(list);
+}
+
+/**
+ * Runtime priority 기준으로 현재 default 모델을 선택한다.
+ */
+export function selectRuntimeDefaultModel(): string {
+    return firstRuntimeAvailable(FAMILY_PRIORITIES.default) ?? DEFAULT_CODEX_MODEL;
+}
+
+export function runtimeDefaultOpus(): string {
+    return firstRuntimeAvailable(FAMILY_PRIORITIES.opus) ?? DEFAULT_CODEX_MODEL;
+}
+
+export function runtimeDefaultSonnet(): string {
+    return firstRuntimeAvailable(FAMILY_PRIORITIES.sonnet) ?? DEFAULT_CODEX_MODEL;
+}
+
+export function runtimeDefaultHaiku(): string {
+    return firstRuntimeAvailable(FAMILY_PRIORITIES.haiku) ?? DEFAULT_CODEX_MODEL;
+}
+
+/**
+ * family 에 대한 환경변수 override 유효성 검사 후 반환.
+ * runtime gating 이 있을 경우 실제로 사용 가능한 모델에 한해 반영.
+ * 유효하지 않으면 undefined.
+ */
+export function envOverrideForFamily(family: ModelFamily): string | undefined {
+    const envModel = getEnvModelForFamily(family);
+    if (!envModel) return undefined;
+    if (!SUPPORTED_CODEX_MODELS.has(envModel)) return undefined;
+    if (isRuntimeGated() && !isRuntimeAvailable(envModel)) return undefined;
+    return envModel;
 }
 
 export const DEFAULT_CODEX_MODEL = "gpt-5.2-codex";
@@ -103,24 +245,30 @@ export function mapAnthropicModelToCodex(anthropicModel: string): string {
     const isExplicitCodexModel = SUPPORTED_CODEX_MODELS.has(normalizedModel);
     const family = isExplicitCodexModel
         ? null
-        : getModelFamily(normalizedModel);
-    const selectedModel = family ? getEnvModelForFamily(family) : undefined;
-    const mappedModel = isExplicitCodexModel
+        : getFamilyFor(normalizedModel);
+
+    // 1) env override (가장 우선)
+    const envSelected = family ? envOverrideForFamily(family) : undefined;
+
+    // 2) hardcoded exact match (explicit codex 이름 포함)
+    const hardMapped = isExplicitCodexModel
         ? normalizedModel
-        : (HARDCODED_MAPPING[normalizedModel] ?? DEFAULT_CODEX_MODEL);
-    const finalModel = selectedModel ?? mappedModel;
-    const validatedModel =
-        selectedModel && !SUPPORTED_CODEX_MODELS.has(selectedModel)
-            ? mappedModel
-            : finalModel;
+        : HARDCODED_MAPPING[normalizedModel];
+
+    // 3) family priority (FAMILY_PRIORITIES 기반 runtime-aware)
+    const familyPick = pickFromFamily(family);
+
+    // 4) 최종 fallback
+    const finalModel =
+        envSelected ?? hardMapped ?? familyPick ?? DEFAULT_CODEX_MODEL;
 
     console.log(
         `[chatgpt-codex-proxy] model_map anthropic=${normalizedModel} family=${family ?? "unknown"} selected=${
-            selectedModel ?? "-"
-        } mapped=${mappedModel} final=${validatedModel}`,
+            envSelected ?? "-"
+        } mapped=${hardMapped ?? "-"} final=${finalModel}`,
     );
 
-    return validatedModel;
+    return finalModel;
 }
 
 export const CODEX_MODEL_EFFORT: Record<string, string> = {
