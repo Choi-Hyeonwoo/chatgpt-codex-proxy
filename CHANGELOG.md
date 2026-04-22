@@ -10,8 +10,17 @@ releases. See the "Versioning" section in `README.md` for policy details.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-04-23
+
 ### Added
-- (placeholder — work toward v0.5.0 lands here)
+- In-memory token refresh cache with concurrent dedup — 5-minute pre-refresh buffer, shared refresh promise prevents N concurrent OAuth refreshes. (#8, PR #33)
+- Supporting tests: 5 unit cases (fresh cache, buffer expiry, 100-parallel dedup, failure reset, hard expiry).
+
+### Changed
+- `src/auth/oauth.ts` `getValidTokens` routed through the token cache layer.
+
+### Notes
+- This milestone closes the v0.5.0 DX & CI scope. Earlier DX items (README translation, env drift check, CHANGELOG policy, GitHub Actions test workflow) landed in v0.3.0.
 
 ## [0.4.0] - 2026-04-22
 
@@ -25,7 +34,7 @@ releases. See the "Versioning" section in `README.md` for policy details.
 - SSE writes use drain-aware `writeEvent()` helper; client disconnects propagate via `AbortController` to cancel in-flight requests
 
 ### Deferred
-- #8 token refresh in-memory cache with concurrent dedup — moved to v0.5.0 milestone
+- #8 token refresh in-memory cache with concurrent dedup — shipped in v0.5.0
 
 ## [0.3.0] - 2026-04-22
 
@@ -85,18 +94,8 @@ substantive changes for 0.2.0 are captured in the `[0.3.0]` section above.
 ### Added
 - Fork baseline imported from upstream `TBXark/chatgpt-codex-proxy`.
 
-## Roadmap
-
-Upcoming milestones (tracked in GitHub Issues, promoted into CHANGELOG
-stanzas when tagged):
-
-- **v0.4.0** — refactor & tests (auth split, token cache, backpressure,
-  test suite expansion).
-- **v0.5.0** — DX & CI (already closed and folded into v0.3.0 above; the
-  standalone v0.5.0 tag is deferred until after v0.4.0 ships to keep the
-  tag sequence semver-clean).
-
-[Unreleased]: https://github.com/Choi-Hyeonwoo/chatgpt-codex-proxy/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Choi-Hyeonwoo/chatgpt-codex-proxy/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Choi-Hyeonwoo/chatgpt-codex-proxy/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Choi-Hyeonwoo/chatgpt-codex-proxy/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Choi-Hyeonwoo/chatgpt-codex-proxy/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Choi-Hyeonwoo/chatgpt-codex-proxy/releases/tag/v0.2.0
