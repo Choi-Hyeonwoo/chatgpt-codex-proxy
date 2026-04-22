@@ -158,6 +158,9 @@ export class CodexClient {
 
     console.log(`[chatgpt-codex-proxy] Calling ${request.model} with effort=${request.reasoning.effort}`);
 
+    // Codex CLI 경로는 항상 SSE. 비스트리밍 분기는 폐기됨.
+    // Codex backend는 stream:true만 지원하므로 요청에 강제로 stream:true 주입.
+    // 단일 파서(parseSseStream)를 통해 delta 누적 및 response.done/completed 이벤트를 수신한다.
     const codexRequest: CodexRequest = {
       ...request,
       stream: true,
@@ -197,14 +200,8 @@ export class CodexClient {
       throw new CodexApiError(parseErrorMessage(response.status, parsedBody), response.status, parsedBody);
     }
 
-    // Handle SSE stream
-    if (request.stream) {
-      return await this.parseSseResponse(response);
-    }
-
-    // Non-streaming: parse final response
-    const sseText = await response.text();
-    return this.parseFinalResponse(sseText);
+    // 단일 코드패스: Codex는 항상 SSE로 응답하므로 parseSseResponse만 사용.
+    return await this.parseSseResponse(response);
   }
 
   private async parseSseResponse(response: Response): Promise<CodexResponse> {
@@ -212,67 +209,66 @@ export class CodexClient {
       throw new CodexApiError("Missing SSE response body from Codex API.", 502);
     }
 
-    const outputTextParts: string[] = [];
-    let finalResponse: CodexResponse | null = null;
-
-    for await (const event of parseSseStream(response.body)) {
-      if (event.data === "[DONE]") break;
-
-      let parsed: { type?: string; delta?: string; response?: CodexResponse };
-      try {
-        parsed = JSON.parse(event.data);
-      } catch {
-        continue;
-      }
-
-      // Accumulate text deltas
-      if (parsed.type === "response.output_text.delta" && typeof parsed.delta === "string") {
-        outputTextParts.push(parsed.delta);
-      }
-
-      // Capture final response
-      if ((parsed.type === "response.done" || parsed.type === "response.completed") && parsed.response) {
-        finalResponse = parsed.response;
-      }
-    }
-
-    if (finalResponse) {
-      return finalResponse;
-    }
-
-    // Fallback: construct response from accumulated text
-    return {
-      id: randomUUID(),
-      model: "codex",
-      output: [
-        {
-          role: "assistant",
-          type: "message",
-          content: [{ type: "output_text", text: outputTextParts.join("") }],
-        },
-      ],
-      stop_reason: "end_turn",
-    };
-  }
-
-  private parseFinalResponse(sseText: string): CodexResponse {
-    const lines = sseText.split("\n");
-
-    for (const line of lines) {
-      if (line.startsWith("data: ")) {
-        try {
-          const data = JSON.parse(line.slice(6));
-
-          // Look for response.done event
-          if (data.type === "response.done" || data.type === "response.completed") {
-            return data.response as CodexResponse;
-          }
-        } catch {
-          // Skip malformed JSON
-        }
-      }
-    }
-
-    throw new CodexApiError("Failed to parse Codex SSE response", 502);
+    return await collectSseResponse(response.body);
   }
 }
+
+/**
+ * SSE stream -> CodexResponse 변환 코어.
+ * - delta(output_text.delta) 누적
+ * - response.done/completed 중 "마지막으로 도착한" 이벤트가 최종으로 채택됨 (덮어쓰기)
+ * - 최종 이벤트가 없으면 누적된 delta로 fallback assistant 메시지 생성
+ * - [DONE] sentinel 수신 시 루프 종료
+ * 테스트에서 재사용하기 위해 별도 함수로 분리하고 __testing__로 노출한다.
+ */
+async function collectSseResponse(stream: ReadableStream<Uint8Array>): Promise<CodexResponse> {
+  const outputTextParts: string[] = [];
+  let finalResponse: CodexResponse | null = null;
+
+  for await (const event of parseSseStream(stream)) {
+    if (event.data === "[DONE]") break;
+
+    let parsed: { type?: string; delta?: string; response?: CodexResponse };
+    try {
+      parsed = JSON.parse(event.data);
+    } catch {
+      continue;
+    }
+
+    // Accumulate text deltas
+    if (parsed.type === "response.output_text.delta" && typeof parsed.delta === "string") {
+      outputTextParts.push(parsed.delta);
+    }
+
+    // Capture final response (last wins: response.completed가 response.done 뒤에 오면 완료가 채택됨)
+    if ((parsed.type === "response.done" || parsed.type === "response.completed") && parsed.response) {
+      finalResponse = parsed.response;
+    }
+  }
+
+  if (finalResponse) {
+    return finalResponse;
+  }
+
+  // Fallback: construct response from accumulated text
+  return {
+    id: randomUUID(),
+    model: "codex",
+    output: [
+      {
+        role: "assistant",
+        type: "message",
+        content: [{ type: "output_text", text: outputTextParts.join("") }],
+      },
+    ],
+    stop_reason: "end_turn",
+  };
+}
+
+/**
+ * 테스트 전용 노출. 프로덕션 코드에서 import하지 말 것.
+ */
+export const __testing__ = {
+  parseSseStream,
+  collectSseResponse,
+};
