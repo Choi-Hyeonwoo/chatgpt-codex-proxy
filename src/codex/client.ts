@@ -22,6 +22,7 @@
 import { randomUUID } from "node:crypto";
 import type { CodexRequest } from "../transformers/request.js";
 import { getValidTokens } from "../auth.js";
+import { redactSecrets } from "../utils/sanitize.js";
 
 const CODEX_BASE_URL = process.env.CODEX_BASE_URL ?? "https://chatgpt.com/backend-api";
 const CODEX_RESPONSES_PATH = "/codex/responses";
@@ -156,7 +157,12 @@ export class CodexClient {
       throw new CodexApiError("Could not extract ChatGPT account ID from token.", 401);
     }
 
-    console.log(`[chatgpt-codex-proxy] Calling ${request.model} with effort=${request.reasoning.effort}`);
+    // Wrapping through redactSecrets keeps this log consistent with the
+    // sanitizer contract used elsewhere; model/effort are non-sensitive today
+    // but the hook lets future fields (headers, account id) be safely logged.
+    console.log(
+      redactSecrets(`[chatgpt-codex-proxy] Calling ${request.model} with effort=${request.reasoning.effort}`),
+    );
 
     const codexRequest: CodexRequest = {
       ...request,

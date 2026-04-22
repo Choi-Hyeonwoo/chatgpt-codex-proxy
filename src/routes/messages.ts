@@ -25,6 +25,7 @@ import { transformCodexToAnthropic } from "../transformers/response.js";
 import type { AnthropicRequest, AnthropicResponse } from "../types/anthropic.js";
 import { ProxyError } from "../utils/errors.js";
 import { mcpToolRegistry } from "../mcp/registry.js";
+import { redactSecrets } from "../utils/sanitize.js";
 
 const router = Router();
 const codexClient = new CodexClient();
@@ -66,7 +67,9 @@ router.post(
         ? `enabled(budget=${body.thinking.budget_tokens ?? "?"})`
         : "disabled";
       console.log(
-        `[chatgpt-codex-proxy] inbound messages model=${body.model} stream=${Boolean(body.stream)} messages=${body.messages.length} thinking=${inboundThinking}`,
+        redactSecrets(
+          `[chatgpt-codex-proxy] inbound messages model=${body.model} stream=${Boolean(body.stream)} messages=${body.messages.length} thinking=${inboundThinking}`,
+        ),
       );
 
       // Transform and call Codex
@@ -93,9 +96,11 @@ router.post(
       const inboundToolNames = (body.tools ?? []).map((tool) => tool.name).join(",");
 
       console.log(
-        `[chatgpt-codex-proxy] tool_plan inbound_parallel=${String(inboundParallel)} effective_parallel=${String(
-          codexRequest.parallel_tool_calls,
-        )} tool_count=${inboundToolCount} inbound_tool_choice=${inboundToolChoice} codex_tool_choice=${String(codexRequest.tool_choice)} tool_names=[${inboundToolNames}]`,
+        redactSecrets(
+          `[chatgpt-codex-proxy] tool_plan inbound_parallel=${String(inboundParallel)} effective_parallel=${String(
+            codexRequest.parallel_tool_calls,
+          )} tool_count=${inboundToolCount} inbound_tool_choice=${inboundToolChoice} codex_tool_choice=${String(codexRequest.tool_choice)} tool_names=[${inboundToolNames}]`,
+        ),
       );
 
       const codexResponse = await codexClient.createResponse(codexRequest);
@@ -113,7 +118,9 @@ router.post(
       const anthropicText = (anthropicResponse.content ?? []).filter((block) => block.type === "text").length;
 
       console.log(
-        `[chatgpt-codex-proxy] tool_diag parallel=${String(codexRequest.parallel_tool_calls)} codex_fn_calls=${codexFunctionCalls} codex_text_blocks=${codexOutputText} anthropic_tool_use=${anthropicToolUse} anthropic_text_blocks=${anthropicText} stop_reason=${anthropicResponse.stop_reason}`,
+        redactSecrets(
+          `[chatgpt-codex-proxy] tool_diag parallel=${String(codexRequest.parallel_tool_calls)} codex_fn_calls=${codexFunctionCalls} codex_text_blocks=${codexOutputText} anthropic_tool_use=${anthropicToolUse} anthropic_text_blocks=${anthropicText} stop_reason=${anthropicResponse.stop_reason}`,
+        ),
       );
 
       // Handle streaming
