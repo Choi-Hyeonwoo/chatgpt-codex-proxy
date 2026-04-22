@@ -24,6 +24,7 @@ import { transformAnthropicToCodex } from "../transformers/request.js";
 import { transformCodexToAnthropic } from "../transformers/response.js";
 import type { AnthropicRequest, AnthropicResponse } from "../types/anthropic.js";
 import { ProxyError } from "../utils/errors.js";
+import { validateAnthropicRequest } from "../utils/validate.js";
 import { mcpToolRegistry } from "../mcp/registry.js";
 import { redactSecrets } from "../utils/sanitize.js";
 
@@ -51,17 +52,7 @@ router.post(
 
     try {
       // Validate request
-      if (!body || typeof body !== "object") {
-        throw new ProxyError("Invalid JSON body", 400, "invalid_request_error");
-      }
-
-      if (!body.model || !Array.isArray(body.messages)) {
-        throw new ProxyError(
-          "Missing required fields: model, messages",
-          400,
-          "invalid_request_error"
-        );
-      }
+      validateAnthropicRequest(body);
 
       const inboundThinking = body.thinking?.type === "enabled"
         ? `enabled(budget=${body.thinking.budget_tokens ?? "?"})`
@@ -227,6 +218,11 @@ router.post(
       // Non-streaming response
       res.status(200).json(anthropicResponse);
     } catch (error) {
+      // Preserve ProxyError (e.g., from validateAnthropicRequest) as-is.
+      if (error instanceof ProxyError) {
+        return next(error);
+      }
+
       if (error instanceof CodexApiError) {
         if (error.status === 401) {
           return next(new ProxyError(error.message, 401, "authentication_error"));
