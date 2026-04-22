@@ -11,7 +11,21 @@ releases. See the "Versioning" section in `README.md` for policy details.
 ## [Unreleased]
 
 ### Added
-- (placeholder — work toward v0.4.0 lands here)
+- (placeholder — work toward v0.5.0 lands here)
+
+## [0.4.0] - 2026-04-22
+
+### Added
+- SSE streaming backpressure with AbortController support (#10, PR #30)
+- Expanded test suite: +15 assertions covering request validation, error mapping, health probe, streaming, and utils (#11, PR #32)
+- New test files: `validate.test.ts`, `messages.stream.test.ts`, `routes.health.test.ts`, `utils.errors.test.ts`, `messages.stream-backpressure.test.ts`
+
+### Changed
+- `src/auth.ts` split into `src/auth/jwt.ts`, `src/auth/token-storage.ts`, `src/auth/oauth.ts` — original file kept as barrel re-export for full backward compatibility (#5, PR #31)
+- SSE writes use drain-aware `writeEvent()` helper; client disconnects propagate via `AbortController` to cancel in-flight requests
+
+### Deferred
+- #8 token refresh in-memory cache with concurrent dedup — moved to v0.5.0 milestone
 
 ## [0.3.0] - 2026-04-22
 
@@ -82,6 +96,7 @@ stanzas when tagged):
   standalone v0.5.0 tag is deferred until after v0.4.0 ships to keep the
   tag sequence semver-clean).
 
-[Unreleased]: https://github.com/Choi-Hyeonwoo/chatgpt-codex-proxy/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Choi-Hyeonwoo/chatgpt-codex-proxy/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Choi-Hyeonwoo/chatgpt-codex-proxy/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Choi-Hyeonwoo/chatgpt-codex-proxy/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Choi-Hyeonwoo/chatgpt-codex-proxy/releases/tag/v0.2.0

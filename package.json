@@ -1,6 +1,6 @@
 {
   "name": "chatgpt-codex-proxy",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Anthropic-compatible proxy server for Claude Code -> ChatGPT integration",
   "type": "module",
   "private": true,
