@@ -19,6 +19,10 @@
  *   sonnet 리스트에 xhigh가 포함되도록 유지해야 한다(이슈 #7).
  */
 
+import { createLogger } from "../utils/logger.js";
+
+const log = createLogger("codex.models");
+
 export type ModelFamily = "haiku" | "sonnet" | "opus";
 
 /**
@@ -236,8 +240,8 @@ export function mapAnthropicModelToCodex(anthropicModel: string): string {
 
     if (isPassthroughModeEnabled()) {
         const passthroughModel = normalizedModel || DEFAULT_CODEX_MODEL;
-        console.log(
-            `[chatgpt-codex-proxy] model_map anthropic=${normalizedModel || "-"} family=passthrough selected=- mapped=${passthroughModel} final=${passthroughModel}`,
+        log.debug(
+            `model_map anthropic=${normalizedModel || "-"} family=passthrough selected=- mapped=${passthroughModel} final=${passthroughModel}`,
         );
         return passthroughModel;
     }
@@ -262,8 +266,8 @@ export function mapAnthropicModelToCodex(anthropicModel: string): string {
     const finalModel =
         envSelected ?? hardMapped ?? familyPick ?? DEFAULT_CODEX_MODEL;
 
-    console.log(
-        `[chatgpt-codex-proxy] model_map anthropic=${normalizedModel} family=${family ?? "unknown"} selected=${
+    log.debug(
+        `model_map anthropic=${normalizedModel} family=${family ?? "unknown"} selected=${
             envSelected ?? "-"
         } mapped=${hardMapped ?? "-"} final=${finalModel}`,
     );

@@ -17,6 +17,9 @@
  * - 상태 코드 매핑을 바꾸면 클라이언트 재시도/에러 처리 동작이 달라진다.
  */
 import type { NextFunction, Request, Response } from "express";
+import { createLogger } from "./logger.js";
+
+const log = createLogger("errors");
 
 export class ProxyError extends Error {
   public readonly statusCode: number;
@@ -93,8 +96,7 @@ export function errorHandler(
           });
 
   if (proxyError.statusCode >= 500) {
-    // eslint-disable-next-line no-console
-    console.error("[ERROR]", proxyError);
+    log.error(`[ERROR] ${proxyError.message}`, proxyError);
   }
 
   res.status(proxyError.statusCode).json(formatErrorResponse(proxyError));
