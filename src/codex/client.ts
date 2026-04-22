@@ -22,6 +22,7 @@
 import { randomUUID } from "node:crypto";
 import type { CodexRequest } from "../transformers/request.js";
 import { getValidTokens } from "../auth.js";
+import { redactSecrets } from "../utils/sanitize.js";
 
 const CODEX_BASE_URL = process.env.CODEX_BASE_URL ?? "https://chatgpt.com/backend-api";
 const CODEX_RESPONSES_PATH = "/codex/responses";
@@ -156,7 +157,12 @@ export class CodexClient {
       throw new CodexApiError("Could not extract ChatGPT account ID from token.", 401);
     }
 
-    console.log(`[chatgpt-codex-proxy] Calling ${request.model} with effort=${request.reasoning.effort}`);
+    // Wrapping through redactSecrets keeps this log consistent with the
+    // sanitizer contract used elsewhere; model/effort are non-sensitive today
+    // but the hook lets future fields (headers, account id) be safely logged.
+    console.log(
+      redactSecrets(`[chatgpt-codex-proxy] Calling ${request.model} with effort=${request.reasoning.effort}`),
+    );
 
     // Codex CLI 경로는 항상 SSE. 비스트리밍 분기는 폐기됨.
     // Codex backend는 stream:true만 지원하므로 요청에 강제로 stream:true 주입.

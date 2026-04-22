@@ -27,6 +27,7 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { createHash, randomBytes } from "node:crypto";
+import { redactSecrets } from "./utils/sanitize.js";
 
 // OAuth Constants (from OpenAI Codex CLI)
 export const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
@@ -131,7 +132,7 @@ export async function exchangeCodeForTokens(
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    console.error("[chatgpt-codex-proxy] Token exchange failed:", res.status, text);
+    console.error("[chatgpt-codex-proxy] Token exchange failed:", res.status, redactSecrets(text));
     return null;
   }
 
@@ -174,7 +175,7 @@ export async function refreshAccessToken(refreshToken: string): Promise<TokenDat
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    console.error("[chatgpt-codex-proxy] Token refresh failed:", res.status, text);
+    console.error("[chatgpt-codex-proxy] Token refresh failed:", res.status, redactSecrets(text));
     return null;
   }
 

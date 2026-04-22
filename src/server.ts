@@ -21,6 +21,7 @@ import express, { type Request, type Response, type NextFunction } from "express
 import cors from "cors";
 import messagesRouter from "./routes/messages.js";
 import { errorHandler, notFoundHandler } from "./utils/errors.js";
+import { redactSecrets } from "./utils/sanitize.js";
 
 const app = express();
 const jsonBodyLimit = process.env.PROXY_JSON_LIMIT ?? "20mb";
@@ -30,13 +31,14 @@ app.use(express.json({ limit: jsonBodyLimit }));
 
 app.use((req: Request, _res: Response, next: NextFunction) => {
   const startedAt = Date.now();
+  const safeUrl = redactSecrets(req.originalUrl);
   // eslint-disable-next-line no-console
-  console.log(`[REQ] ${req.method} ${req.originalUrl} - ${new Date().toISOString()}`);
+  console.log(`[REQ] ${req.method} ${safeUrl} - ${new Date().toISOString()}`);
 
   _res.on("finish", () => {
     const durationMs = Date.now() - startedAt;
     // eslint-disable-next-line no-console
-    console.log(`[RES] ${req.method} ${req.originalUrl} ${_res.statusCode} - ${durationMs}ms`);
+    console.log(`[RES] ${req.method} ${safeUrl} ${_res.statusCode} - ${durationMs}ms`);
   });
 
   next();
