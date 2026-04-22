@@ -28,3 +28,6 @@ CLAUDE.md
 /dxt/package-lock.json
 /dxt/pnpm-lock.yaml
 /dxt/bun.lockb
+
+# ignore root-level node_modules symlink (dev tooling)
+/node_modules
