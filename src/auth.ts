@@ -88,6 +88,43 @@ export function decodeJWT(token: string): Record<string, unknown> | null {
 }
 
 /**
+ * Build TokenData from OAuth token response.
+ * Deduplicates the field assembly logic used by both
+ * exchangeCodeForTokens and refreshAccessToken (#4).
+ *
+ * - expires_at = Date.now() + expires_in * 1000
+ * - account_id: response > JWT claim > previous (in that order)
+ * - refresh_token / id_token (if added later): response > previous
+ */
+function buildTokenData(
+  resp: {
+    access_token: string;
+    refresh_token?: string;
+    id_token?: string;
+    expires_in: number;
+    account_id?: string;
+  },
+  previous?: TokenData
+): TokenData {
+  const decoded = decodeJWT(resp.access_token);
+  const authClaim = decoded?.["https://api.openai.com/auth"] as
+    | { chatgpt_account_id?: string }
+    | undefined;
+  const jwtAccountId = authClaim?.chatgpt_account_id;
+
+  return {
+    access_token: resp.access_token,
+    refresh_token: resp.refresh_token ?? previous?.refresh_token ?? "",
+    expires_at: Date.now() + resp.expires_in * 1000,
+    chatgpt_account_id:
+      resp.account_id ?? jwtAccountId ?? previous?.chatgpt_account_id,
+  };
+}
+
+/** @internal Exposed for unit testing only. */
+export const __testing__ = { buildTokenData };
+
+/**
  * Load tokens from file
  */
 export function loadTokens(): TokenData | null {
@@ -147,16 +184,11 @@ export async function exchangeCodeForTokens(
     return null;
   }
 
-  // Extract account ID from JWT
-  const decoded = decodeJWT(json.access_token);
-  const accountId = decoded?.["https://api.openai.com/auth"] as { chatgpt_account_id?: string } | undefined;
-
-  return {
+  return buildTokenData({
     access_token: json.access_token,
     refresh_token: json.refresh_token,
-    expires_at: Date.now() + json.expires_in * 1000,
-    chatgpt_account_id: accountId?.chatgpt_account_id,
-  };
+    expires_in: json.expires_in,
+  });
 }
 
 /**
@@ -189,15 +221,11 @@ export async function refreshAccessToken(refreshToken: string): Promise<TokenDat
     return null;
   }
 
-  const decoded = decodeJWT(json.access_token);
-  const accountId = decoded?.["https://api.openai.com/auth"] as { chatgpt_account_id?: string } | undefined;
-
-  return {
+  return buildTokenData({
     access_token: json.access_token,
     refresh_token: json.refresh_token,
-    expires_at: Date.now() + json.expires_in * 1000,
-    chatgpt_account_id: accountId?.chatgpt_account_id,
-  };
+    expires_in: json.expires_in,
+  });
 }
 
 /**
