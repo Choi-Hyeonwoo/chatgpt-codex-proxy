@@ -56,6 +56,10 @@ git clone <repo-url>
 cd chatgpt-codex-proxy
 npm install && npm run build
 
+# (optional) Copy the env template and edit values as needed.
+# All variables are optional; PORT and CODEX_BASE_URL have sane defaults.
+cp .env.example .env
+
 # Login with your ChatGPT account (browser opens)
 npm run login
 
