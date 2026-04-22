@@ -27,6 +27,7 @@ import { ProxyError } from "../utils/errors.js";
 import { validateAnthropicRequest } from "../utils/validate.js";
 import { mcpToolRegistry } from "../mcp/registry.js";
 import { createLogger } from "../utils/logger.js";
+import { writeEvent } from "../utils/stream-write.js";
 
 const router = Router();
 const codexClient = new CodexClient();
@@ -50,6 +51,15 @@ router.post(
   "/v1/messages",
   async (req: Request<unknown, AnthropicResponse, AnthropicRequest>, res: Response, next: NextFunction) => {
     const body = req.body;
+
+    // AbortController: 클라이언트 disconnect 시 upstream Codex 호출 중단.
+    const abortController = new AbortController();
+    const onClientClose = () => {
+      if (!abortController.signal.aborted) {
+        abortController.abort();
+      }
+    };
+    req.on("close", onClientClose);
 
     try {
       // Validate request
@@ -91,7 +101,9 @@ router.post(
         )} tool_count=${inboundToolCount} inbound_tool_choice=${inboundToolChoice} codex_tool_choice=${String(codexRequest.tool_choice)} tool_names=[${inboundToolNames}]`,
       );
 
-      const codexResponse = await codexClient.createResponse(codexRequest);
+      const codexResponse = await codexClient.createResponse(codexRequest, {
+        signal: abortController.signal,
+      });
       const anthropicResponse = transformCodexToAnthropic(codexResponse, body.model);
 
       const codexFunctionCalls = (codexResponse.output ?? []).filter((item) => item.type === "function_call").length;
@@ -116,7 +128,8 @@ router.post(
         res.setHeader("Connection", "keep-alive");
 
         // message_start
-        res.write(
+        await writeEvent(
+          res,
           `event: message_start\ndata: ${JSON.stringify({
             type: "message_start",
             message: {
@@ -128,40 +141,44 @@ router.post(
               stop_reason: null,
               usage: { input_tokens: 0, output_tokens: 0 },
             },
-          })}\n\n`
+          })}\n\n`,
         );
 
         let blockIndex = 0;
         for (const block of anthropicResponse.content ?? []) {
           if (block.type === "text") {
-            res.write(
+            await writeEvent(
+              res,
               `event: content_block_start\ndata: ${JSON.stringify({
                 type: "content_block_start",
                 index: blockIndex,
                 content_block: { type: "text", text: "" },
-              })}\n\n`
+              })}\n\n`,
             );
 
-            res.write(
+            await writeEvent(
+              res,
               `event: content_block_delta\ndata: ${JSON.stringify({
                 type: "content_block_delta",
                 index: blockIndex,
                 delta: { type: "text_delta", text: block.text ?? "" },
-              })}\n\n`
+              })}\n\n`,
             );
 
-            res.write(
+            await writeEvent(
+              res,
               `event: content_block_stop\ndata: ${JSON.stringify({
                 type: "content_block_stop",
                 index: blockIndex,
-              })}\n\n`
+              })}\n\n`,
             );
             blockIndex += 1;
             continue;
           }
 
           if (block.type === "tool_use") {
-            res.write(
+            await writeEvent(
+              res,
               `event: content_block_start\ndata: ${JSON.stringify({
                 type: "content_block_start",
                 index: blockIndex,
@@ -171,10 +188,11 @@ router.post(
                   name: block.name,
                   input: {},
                 },
-              })}\n\n`
+              })}\n\n`,
             );
 
-            res.write(
+            await writeEvent(
+              res,
               `event: content_block_delta\ndata: ${JSON.stringify({
                 type: "content_block_delta",
                 index: blockIndex,
@@ -182,30 +200,35 @@ router.post(
                   type: "input_json_delta",
                   partial_json: JSON.stringify(block.input ?? {}),
                 },
-              })}\n\n`
+              })}\n\n`,
             );
 
-            res.write(
+            await writeEvent(
+              res,
               `event: content_block_stop\ndata: ${JSON.stringify({
                 type: "content_block_stop",
                 index: blockIndex,
-              })}\n\n`
+              })}\n\n`,
             );
             blockIndex += 1;
           }
         }
 
         // message_delta
-        res.write(
+        await writeEvent(
+          res,
           `event: message_delta\ndata: ${JSON.stringify({
             type: "message_delta",
             delta: { stop_reason: anthropicResponse.stop_reason, stop_sequence: anthropicResponse.stop_sequence ?? null },
             usage: anthropicResponse.usage,
-          })}\n\n`
+          })}\n\n`,
         );
 
         // message_stop
-        res.write(`event: message_stop\ndata: ${JSON.stringify({ type: "message_stop" })}\n\n`);
+        await writeEvent(
+          res,
+          `event: message_stop\ndata: ${JSON.stringify({ type: "message_stop" })}\n\n`,
+        );
         res.end();
         return;
       }
@@ -213,6 +236,30 @@ router.post(
       // Non-streaming response
       res.status(200).json(anthropicResponse);
     } catch (error) {
+      // 클라이언트가 연결을 끊었다면 abort. upstream 에러는 조용히 종료.
+      if (abortController.signal.aborted) {
+        if (!res.writableEnded) {
+          try {
+            res.end();
+          } catch {
+            // ignore
+          }
+        }
+        return;
+      }
+
+      // fetch AbortError (client disconnect 외 다른 abort) 조기 종료 처리.
+      if (error instanceof Error && (error.name === "AbortError" || (error as { code?: string }).code === "ABORT_ERR")) {
+        if (!res.writableEnded) {
+          try {
+            res.end();
+          } catch {
+            // ignore
+          }
+        }
+        return;
+      }
+
       // Preserve ProxyError (e.g., from validateAnthropicRequest) as-is.
       if (error instanceof ProxyError) {
         return next(error);
@@ -250,6 +297,8 @@ router.post(
       }
 
       next(new ProxyError("Unhandled proxy error", 500, "internal_server_error", { error }));
+    } finally {
+      req.off("close", onClientClose);
     }
   }
 );

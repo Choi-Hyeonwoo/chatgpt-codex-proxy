@@ -148,7 +148,10 @@ async function* parseSseStream(stream: ReadableStream<Uint8Array>): AsyncGenerat
 }
 
 export class CodexClient {
-  async createResponse(request: CodexRequest): Promise<CodexResponse> {
+  async createResponse(
+    request: CodexRequest,
+    options?: { signal?: AbortSignal },
+  ): Promise<CodexResponse> {
     const tokens = await getValidTokens();
 
     if (!tokens) {
@@ -181,6 +184,7 @@ export class CodexClient {
         "originator": "codex_cli_rs",
       },
       body: JSON.stringify(codexRequest),
+      signal: options?.signal,
     });
 
     if (!response.ok) {
