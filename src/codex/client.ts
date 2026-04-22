@@ -219,56 +219,80 @@ export class CodexClient {
   }
 }
 
+// 테스트에서 마지막으로 사용된 outputTextParts 참조를 검사하기 위한 훅.
+// 프로덕션에는 영향이 없고, 메모리 clear 동작을 검증하는 용도로만 쓴다.
+let __lastOutputTextPartsRef: string[] | null = null;
+
 /**
  * SSE stream -> CodexResponse 변환 코어.
  * - delta(output_text.delta) 누적
  * - response.done/completed 중 "마지막으로 도착한" 이벤트가 최종으로 채택됨 (덮어쓰기)
  * - 최종 이벤트가 없으면 누적된 delta로 fallback assistant 메시지 생성
  * - [DONE] sentinel 수신 시 루프 종료
+ * - finalResponse 수신 즉시 outputTextParts를 truncate하여 GC가 수거 가능하게 함
+ *   (긴 응답에서 누적된 delta 배열이 수 MB가 되어도 final 이벤트 후 바로 해제)
+ * - 루프 종료 시에도 defensive clear
  * 테스트에서 재사용하기 위해 별도 함수로 분리하고 __testing__로 노출한다.
  */
 async function collectSseResponse(stream: ReadableStream<Uint8Array>): Promise<CodexResponse> {
   const outputTextParts: string[] = [];
+  __lastOutputTextPartsRef = outputTextParts;
   let finalResponse: CodexResponse | null = null;
 
-  for await (const event of parseSseStream(stream)) {
-    if (event.data === "[DONE]") break;
+  try {
+    for await (const event of parseSseStream(stream)) {
+      if (event.data === "[DONE]") break;
 
-    let parsed: { type?: string; delta?: string; response?: CodexResponse };
-    try {
-      parsed = JSON.parse(event.data);
-    } catch {
-      continue;
+      let parsed: { type?: string; delta?: string; response?: CodexResponse };
+      try {
+        parsed = JSON.parse(event.data);
+      } catch {
+        continue;
+      }
+
+      // Accumulate text deltas
+      if (parsed.type === "response.output_text.delta" && typeof parsed.delta === "string") {
+        outputTextParts.push(parsed.delta);
+      }
+
+      // Capture final response (last wins: response.completed가 response.done 뒤에 오면 완료가 채택됨)
+      if ((parsed.type === "response.done" || parsed.type === "response.completed") && parsed.response) {
+        finalResponse = parsed.response;
+        // final 이벤트 수신 직후 누적 버퍼 해제.
+        // 이후 delta가 더 도착해도 fallback 경로로 가지 않으므로 버려도 안전.
+        outputTextParts.length = 0;
+      }
     }
 
-    // Accumulate text deltas
-    if (parsed.type === "response.output_text.delta" && typeof parsed.delta === "string") {
-      outputTextParts.push(parsed.delta);
+    if (finalResponse) {
+      // 방어적으로 한 번 더 비운다 (위 분기에서 이미 비웠더라도 no-op).
+      outputTextParts.length = 0;
+      return finalResponse;
     }
 
-    // Capture final response (last wins: response.completed가 response.done 뒤에 오면 완료가 채택됨)
-    if ((parsed.type === "response.done" || parsed.type === "response.completed") && parsed.response) {
-      finalResponse = parsed.response;
-    }
+    // Fallback: construct response from accumulated text.
+    // finalResponse가 없을 때만 누적된 delta를 사용하므로 이 경로에서는 clear하지 않는다.
+    const text = outputTextParts.join("");
+    // join 이후에는 더 이상 배열 참조가 필요 없다 → 종료 블록에서 truncate.
+    const fallback: CodexResponse = {
+      id: randomUUID(),
+      model: "codex",
+      output: [
+        {
+          role: "assistant",
+          type: "message",
+          content: [{ type: "output_text", text }],
+        },
+      ],
+      stop_reason: "end_turn",
+    };
+    outputTextParts.length = 0;
+    return fallback;
+  } catch (err) {
+    // 에러로 스트림이 끊어진 경우에도 누적 버퍼 해제.
+    outputTextParts.length = 0;
+    throw err;
   }
-
-  if (finalResponse) {
-    return finalResponse;
-  }
-
-  // Fallback: construct response from accumulated text
-  return {
-    id: randomUUID(),
-    model: "codex",
-    output: [
-      {
-        role: "assistant",
-        type: "message",
-        content: [{ type: "output_text", text: outputTextParts.join("") }],
-      },
-    ],
-    stop_reason: "end_turn",
-  };
 }
 
 /**
@@ -277,4 +301,5 @@ async function collectSseResponse(stream: ReadableStream<Uint8Array>): Promise<C
 export const __testing__ = {
   parseSseStream,
   collectSseResponse,
+  getLastOutputTextPartsRef: () => __lastOutputTextPartsRef,
 };
